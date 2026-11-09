@@ -46,6 +46,21 @@ window.__ModuleLoader__.load({
       'batch.clear': '取消全选',
       'batch.archived': '已归档 {count} 个会话',
       'settings.label': '会话设置',
+      'order.label': '会话排序',
+      'order.title': '会话排序',
+      'order.intro': '内置排序依据是「最近更新时间」，且只有手动和最近更新两种。这里可以按更多方式排序，每个工作区各自独立。',
+      'order.ungrouped': '未分组',
+      'order.empty': '还没有可以排序的会话',
+      'order.count': '{count} 个',
+      'order.modeLabel': '排序方式',
+      'order.byUpdated': '最近更新',
+      'order.byCreated': '创建时间',
+      'order.byName': '名称',
+      'order.bySize': '占用空间',
+      'order.ascending': '正序（当前倒序，点击切换）',
+      'order.descending': '倒序（当前正序，点击切换）',
+      'order.ascShort': '正序 ↑',
+      'order.descShort': '倒序 ↓',
       'settings.title': '会话设置',
       'settings.intro': '这里列出全部已归档的会话。删除会连同会话日志与缓存一起永久移除，不进入回收站。',
       'settings.archived': '已归档会话',
@@ -83,6 +98,21 @@ window.__ModuleLoader__.load({
       'batch.clear': 'Clear selection',
       'batch.archived': 'Archived {count} sessions',
       'settings.label': 'Session settings',
+      'order.label': 'Session order',
+      'order.title': 'Session order',
+      'order.intro': "The built-in order is newest-updated and offers only manual or last-updated. This page sorts by more criteria, with settings kept per workspace.",
+      'order.ungrouped': 'Ungrouped',
+      'order.empty': 'No sessions to order yet',
+      'order.count': '{count}',
+      'order.modeLabel': 'Sort by',
+      'order.byUpdated': 'Last updated',
+      'order.byCreated': 'Created',
+      'order.byName': 'Name',
+      'order.bySize': 'Size',
+      'order.ascending': 'Ascending (currently descending, click to flip)',
+      'order.descending': 'Descending (currently ascending, click to flip)',
+      'order.ascShort': 'Asc ↑',
+      'order.descShort': 'Desc ↓',
       'settings.title': 'Session settings',
       'settings.intro': 'Every archived session is listed here. Deleting removes the session log and its cache permanently; nothing goes to the recycle bin.',
       'settings.archived': 'Archived sessions',
@@ -395,6 +425,8 @@ window.__ModuleLoader__.load({
     const ICON_TRASH = ['M4 7h16', 'M10 11v6', 'M14 11v6', 'M6 7l1 13h10l1-13', 'M9 7V4h6v3']
     const ICON_CHECK = ['M4 12l5 5L20 6']
     const ICON_RESTORE = ['M4 10a8 8 0 1 1 2 6', 'M4 4v6h6']
+    // Ascending bars, the usual "sort" glyph.
+    const ICON_SORT = ['M4 6h9', 'M4 12h6', 'M4 18h3']
 
     // ── Sidebar: context-menu rows ────────────────────────────────────────
     /**
@@ -685,6 +717,308 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // ── Session ordering: one panel, per-workspace settings ───────────────
+    /**
+     * The shipped sidebar orders Sessions two ways only — manual drag order, or
+     * newest-updated first — and both its menu and its sort function are
+     * compiled into the shell, so a plugin can neither add a mode to that menu
+     * nor change how it sorts. This panel therefore carries its own ordering:
+     * the same Session data, read from the same services, sorted by any of the
+     * modes below.
+     *
+     * Settings are per Workspace, stored under this plugin's own key. The
+     * ungrouped bucket uses the empty string, matching how the shell keys it.
+     */
+    const ORDER_STORAGE_KEY = 'dsh-better-session.order.v1'
+    const UNGROUPED_KEY = ''
+
+    /** Sort modes, in the order the picker lists them. */
+    const ORDER_MODES = [
+      { id: 'updated', label: 'order.byUpdated' },
+      { id: 'created', label: 'order.byCreated' },
+      { id: 'name', label: 'order.byName' },
+      { id: 'size', label: 'order.bySize' },
+    ]
+
+    /** Per-account `{ mode, desc }`, loaded once from localStorage. */
+    let orderSettings = loadOrderSettings()
+
+    /** Read the stored per-Workspace ordering, ignoring anything malformed. */
+    function loadOrderSettings () {
+      try {
+        const raw = globalThis.localStorage?.getItem(ORDER_STORAGE_KEY)
+        if (typeof raw !== 'string') return {}
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object') return {}
+        const clean = {}
+        for (const [key, value] of Object.entries(parsed)) {
+          if (value === null || typeof value !== 'object') continue
+          const mode = ORDER_MODES.some(entry => entry.id === value.mode) ? value.mode : 'updated'
+          clean[key] = { mode, desc: value.desc === true }
+        }
+        return clean
+      } catch {
+        return {}
+      }
+    }
+
+    /** Persist the current ordering settings. */
+    function saveOrderSettings () {
+      try {
+        globalThis.localStorage?.setItem(ORDER_STORAGE_KEY, JSON.stringify(orderSettings))
+      } catch {
+        // A browser refusing storage only costs persistence, not the session.
+      }
+    }
+
+    /**
+     * The ordering in force for one account.
+     * @param key - Workspace id, or '' for the ungrouped bucket.
+     * @returns `{ mode, desc }`.
+     */
+    function orderFor (key) {
+      return orderSettings[key] ?? { mode: 'updated', desc: true }
+    }
+
+    /**
+     * Change one account's ordering.
+     * @param key - Workspace id, or '' for the ungrouped bucket.
+     * @param patch - `{ mode?, desc? }`.
+     */
+    function setOrderFor (key, patch) {
+      orderSettings = { ...orderSettings, [key]: { ...orderFor(key), ...patch } }
+      saveOrderSettings()
+      setState({ orderRevision: (snapshot.orderRevision ?? 0) + 1 })
+    }
+
+    /**
+     * Compare two Session rows under one ordering.
+     * @param a - left row.
+     * @param b - right row.
+     * @param mode - sort mode id.
+     * @returns a negative, zero, or positive comparison.
+     */
+    function compareRows (a, b, mode) {
+      if (mode === 'name') {
+        // localeCompare so CJK and accents sort the way a reader expects.
+        return String(a.title ?? '').localeCompare(String(b.title ?? ''), undefined, { numeric: true, sensitivity: 'base' })
+      }
+      if (mode === 'size') return (a.bytes ?? 0) - (b.bytes ?? 0)
+      if (mode === 'created') return (a.createdAt ?? 0) - (b.createdAt ?? 0)
+      return (a.updatedAt ?? 0) - (b.updatedAt ?? 0)
+    }
+
+    /**
+     * Sort rows for one account, honouring its direction. Ties fall back to the
+     * Session id so the list never reorders itself between renders.
+     * @param rows - rows to sort.
+     * @param setting - `{ mode, desc }`.
+     * @returns a new sorted array.
+     */
+    function sortRows (rows, setting) {
+      const factor = setting.desc ? -1 : 1
+      return [...rows].sort((a, b) => {
+        const primary = compareRows(a, b, setting.mode)
+        if (primary !== 0) return primary * factor
+        return String(a.sessionId).localeCompare(String(b.sessionId))
+      })
+    }
+
+    /**
+     * Read every Session with the facts the ordering needs.
+     *
+     * The live snapshot carries title and `updatedAt` but no `createdAt`, so
+     * creation time (and the exact on-disk size) come from the Host's own
+     * records. The live snapshot still decides membership and titles, so a row
+     * appears as soon as the sidebar shows it; Host facts only enrich it.
+     * @param props - the panel's props (its selector hooks are authoritative).
+     * @param revision - bump to re-derive after a settings change.
+     * @returns `{ rows, workspaces, loading }`.
+     */
+    function useSortableRows (props, revision) {
+      const useSessions = props?.useSessions
+      const useWorkspaces = props?.useWorkspaces
+      const list = typeof useSessions === 'function' ? useSessions(state => state) : undefined
+      const archived = typeof useWorkspaces === 'function'
+        ? useWorkspaces(value => (Array.isArray(value?.archivedSessionIds) ? value.archivedSessionIds : EMPTY))
+        : EMPTY
+      const workspaces = typeof useWorkspaces === 'function'
+        ? useWorkspaces(value => (Array.isArray(value?.items) ? value.items : EMPTY))
+        : EMPTY
+
+      const [hostRows, setHostRows] = useState(null)
+      const [loading, setLoading] = useState(true)
+      const signature = (Array.isArray(list?.ids) ? list.ids : EMPTY).join(',')
+
+      useEffect(() => {
+        let cancelled = false
+        // Re-read whenever the visible set changes; the Host read is cheap and
+        // is the only place durable creation time exists.
+        void (async () => {
+          try {
+            const value = await callHost('list', {})
+            if (cancelled) return
+            setHostRows(Array.isArray(value?.sessions) ? value.sessions : EMPTY)
+          } catch {
+            if (!cancelled) setHostRows(EMPTY)
+          } finally {
+            if (!cancelled) setLoading(false)
+          }
+        })()
+        return () => { cancelled = true }
+      }, [signature])
+
+      return useMemo(() => {
+        const ids = Array.isArray(list?.ids) ? list.ids : EMPTY
+        const hidden = new Set(Array.isArray(archived) ? archived : EMPTY)
+        const hostById = new Map((hostRows ?? EMPTY).map(row => [row.sessionId, row]))
+        const rows = ids
+          .filter(id => list?.byId?.[id] !== undefined && !hidden.has(id))
+          .map(id => {
+            const summary = list.byId[id]
+            const host = hostById.get(id)
+            return {
+              sessionId: id,
+              title: summary?.displayTitle ?? host?.title ?? id,
+              updatedAt: typeof summary?.updatedAt === 'number' ? summary.updatedAt : (host?.updatedAt ?? 0),
+              // Only the Host record has a real creation time.
+              createdAt: typeof host?.createdAt === 'number' ? host.createdAt : 0,
+              bytes: typeof host?.bytes === 'number' ? host.bytes : 0,
+              workspaceId: host?.workspaceId ?? null,
+            }
+          })
+        // Sessions the live snapshot has not listed yet still deserve a row.
+        const known = new Set(rows.map(row => row.sessionId))
+        for (const host of hostRows ?? EMPTY) {
+          if (known.has(host.sessionId) || hidden.has(host.sessionId)) continue
+          rows.push({
+            sessionId: host.sessionId,
+            title: host.title ?? host.sessionId,
+            updatedAt: host.updatedAt ?? 0,
+            createdAt: host.createdAt ?? 0,
+            bytes: host.bytes ?? 0,
+            workspaceId: host.workspaceId ?? null,
+          })
+        }
+        return { rows, workspaces: Array.isArray(workspaces) ? workspaces : EMPTY, loading }
+        // `revision` re-derives after a settings change even when data is equal.
+      }, [list, archived, workspaces, hostRows, loading, revision])
+    }
+
+    /**
+     * The ordering panel: pick a mode and a direction, per Workspace.
+     *
+     * Each Workspace is one section with its own controls and its own sorted
+     * list, which is what "per Workspace" means here — the shell exposes one
+     * global ordering, so this is where per-Workspace choice can exist.
+     * @param props - slot props carrying the selector hooks.
+     * @returns the panel body.
+     */
+    function sortPanel (props) {
+      const revision = useStore(s => s.orderRevision ?? 0)
+      const { rows, workspaces } = useSortableRows(props, revision)
+      const navigate = useCallback((sessionId) => {
+        try {
+          clientService('uiWorkspace')?.openSession(sessionId)
+        } catch {
+          // A profile without that face simply cannot navigate from here.
+        }
+      }, [])
+
+      // Group the rows exactly as the shell does: Workspace membership first,
+      // leftovers in the ungrouped bucket.
+      const groups = useMemo(() => {
+        const byId = new Map(rows.map(row => [row.sessionId, row]))
+        const seen = new Set()
+        const out = []
+        for (const workspace of workspaces) {
+          const members = []
+          for (const id of Array.isArray(workspace?.sessionIds) ? workspace.sessionIds : EMPTY) {
+            const row = byId.get(id)
+            if (row === undefined) continue
+            members.push(row)
+            seen.add(id)
+          }
+          if (members.length === 0) continue
+          out.push({ key: String(workspace.workspaceId), title: workspace.title ?? workspace.path ?? workspace.workspaceId, members })
+        }
+        const stray = rows.filter(row => !seen.has(row.sessionId))
+        if (stray.length > 0) out.push({ key: UNGROUPED_KEY, title: t('order.ungrouped'), members: stray })
+        return out
+      }, [rows, workspaces])
+
+      if (rows.length === 0) {
+        return h('div', { className: 'dsm-page' },
+          h('h2', { className: 'dsm-page-title' }, t('order.title')),
+          h('div', { className: 'dsm-empty' }, t('order.empty')))
+      }
+
+      return h('div', { className: 'dsm-page' },
+        h('h2', { className: 'dsm-page-title' }, t('order.title')),
+        h('p', { className: 'dsm-page-intro' }, t('order.intro')),
+        groups.map(group => {
+          const setting = orderFor(group.key)
+          const sorted = sortRows(group.members, setting)
+          return h('div', { key: group.key || '__ungrouped__', className: 'dsm-order-group' },
+            h('div', { className: 'dsm-order-head' },
+              h('span', { className: 'dsm-order-title' }, group.title),
+              h('span', { className: 'dsm-count' }, t('order.count', { count: sorted.length })),
+              h('span', { className: 'dsm-order-spacer' }),
+              h('select', {
+                className: 'dsm-select',
+                value: setting.mode,
+                'aria-label': t('order.modeLabel'),
+                onChange: (event) => setOrderFor(group.key, { mode: event.target.value }),
+              }, ORDER_MODES.map(mode => h('option', { key: mode.id, value: mode.id }, t(mode.label)))),
+              h('button', {
+                type: 'button',
+                className: 'dsm-btn dsm-btn--tight',
+                title: setting.desc ? t('order.descending') : t('order.ascending'),
+                'aria-pressed': setting.desc,
+                onClick: () => setOrderFor(group.key, { desc: !setting.desc }),
+              }, setting.desc ? t('order.descShort') : t('order.ascShort')),
+            ),
+            h('div', { className: 'dsm-list' }, sorted.map((row, index) => h('div', {
+              key: row.sessionId,
+              className: 'dsm-order-row',
+              role: 'button',
+              tabIndex: 0,
+              onClick: () => navigate(row.sessionId),
+              onKeyDown: (event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  navigate(row.sessionId)
+                }
+              },
+            },
+            h('span', { className: 'dsm-order-index' }, String(index + 1)),
+            h('span', { className: 'dsm-item-main' },
+              h('span', { className: 'dsm-item-title' }, row.title || row.sessionId),
+              h('span', { className: 'dsm-item-meta' }, orderMeta(row, setting.mode))),
+            ))),
+          )
+        }),
+      )
+    }
+
+    /**
+     * The meta line under one row, showing the value the current mode sorts by.
+     * @param row - the row.
+     * @param mode - active sort mode.
+     * @returns the meta text.
+     */
+    function orderMeta (row, mode) {
+      if (mode === 'name') return formatMeta(row)
+      if (mode === 'size') return formatBytes(row.bytes ?? 0)
+      const stamp = mode === 'created' ? row.createdAt : row.updatedAt
+      if (typeof stamp !== 'number' || stamp <= 0) return row.sessionId
+      try {
+        return new Date(stamp).toLocaleString()
+      } catch {
+        return row.sessionId
+      }
+    }
+
     // ── Settings: archived-session manager ────────────────────────────────
     /** The archived list arrives through the slot's own workspace hook. */
     function sessionSettingsWithProps (props) {
@@ -927,6 +1261,16 @@ window.__ModuleLoader__.load({
 .dsm-item-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dsm-item-actions{display:flex;align-items:center;gap:2px;flex:none}
 .dsm-empty{font-size:13px;color:var(--dsw-alias-label-secondary);padding:18px 4px}
+.dsm-order-group{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid var(--dsw-alias-border-l1)}
+.dsm-order-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dsm-order-title{font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.dsm-order-spacer{flex:1 1 auto}
+.dsm-select{font:inherit;font-size:12px;line-height:18px;padding:3px 6px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);cursor:pointer}
+.dsm-select:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.dsm-order-row{display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:var(--dsw-radius-md,8px);cursor:pointer}
+.dsm-order-row:hover{background:var(--dsw-alias-bg-layer-2)}
+.dsm-order-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.dsm-order-index{flex:none;width:20px;text-align:right;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 `
 
     /** One style tag for the whole plugin, removed with the client run. */
@@ -1013,6 +1357,22 @@ window.__ModuleLoader__.load({
             ? h(sessionSettingsWithProps, props)
             : h(sessionSettingsWithService, props)
         )))
+
+        // The ordering page: a `main` panel registered under this plugin's key,
+        // opened from the sidebar panel list by the shell.
+        ctx.slots.inject('main', () => ctx.slots.register({
+          name: 'main',
+          key: 'better-session-order',
+          locale: NS,
+        }, sortPanel))
+
+        ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+          name: 'sidebar.panellist',
+          id: 'better-session-order',
+          order: 40,
+          label: () => t('order.label'),
+          locale: NS,
+        }, (props) => icon(ICON_SORT, typeof props?.size === 'number' ? props.size : 16)))
       },
     }
   },
