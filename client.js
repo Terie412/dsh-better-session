@@ -924,7 +924,7 @@ window.__ModuleLoader__.load({
 .dsm-notice--ok{color:var(--dsw-alias-state-success-primary)}
 .dsm-notice--error{color:var(--dsw-alias-state-error-primary)}
 .dsm-scrim{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:24px}
-.dsm-modal{width:min(420px,100%);display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.35)}
+.dsm-modal{width:min(420px,100%);display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.35)}
 .dsm-modal-title{font-size:15px;font-weight:600;line-height:22px}
 .dsm-modal-body{font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
 .dsm-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
@@ -952,7 +952,7 @@ window.__ModuleLoader__.load({
 .dsr-before:hover .dsr-action,.dsr-action:focus-visible{opacity:1}
 .dsr-action:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2)}
 .dsr-scrim{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:24px}
-.dsr-modal{width:min(560px,100%);display:flex;flex-direction:column;gap:10px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.35)}
+.dsr-modal{width:min(560px,100%);display:flex;flex-direction:column;gap:10px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.35)}
 .dsr-title{font-size:15px;font-weight:600;line-height:22px}
 .dsr-text{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;resize:vertical;min-height:80px}
 .dsr-text:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-1px}
