@@ -1,68 +1,77 @@
 # dsh-better-session
 
-Batch session management for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): multi-select archive and permanent delete in the sidebar, plus an archived-session manager in Settings.
+简体中文 | [English](README.en.md)
 
-> **Deletion is permanent.** Sessions are removed from disk, not moved to a recycle bin, so the space is actually reclaimed. Every destructive action goes through a confirmation dialog saying so.
+为 DeepSeek Harness 提供更好的会话管理：批量归档、彻底删除，以及一个集中的「已归档会话」管理页。
 
-## Features
+> ⚠️ **删除是不可恢复的。** 会话会被直接从磁盘移除，不进入回收站，所以磁盘空间会真正释放。每一次删除都会先弹窗确认。
 
-### Sidebar session menu
+## 为什么需要它
 
-Right-click any session row for three extra actions, grouped beneath the built-in menu:
+Harness 自带「归档」，但归档只是把会话从列表里藏起来，文件还在。会话越攒越多时，真正占空间的那些并没有被清理掉，而内置界面也没有提供批量操作。
 
-| Action | What it does |
+这个插件补上三件事：
+
+- 在侧栏里**多选**会话，一次归档或删除一批
+- 把已归档的会话**集中到设置页**统一管理、逐个或批量恢复
+- 提供一个**真正删除**会话的入口
+
+## 安装
+
+在终端执行（把 `web` 换成你实际使用的 profile 名，例如 `desktop`）：
+
+```sh
+dsh plugin --profile web add git@github.com:Terie412/dsh-better-session.git
+```
+
+也可以直接填 HTTPS 地址：
+
+```sh
+dsh plugin --profile web add https://github.com/Terie412/dsh-better-session.git
+```
+
+装好之后，打开 **设置 → 插件**，确认 `dsh-better-session` 处于开启状态。如果列表里还没出现，重启一次 Harness 即可。
+
+## 怎么用
+
+### 侧栏右键菜单
+
+在任意会话上右键，菜单底部会多出几项：
+
+| 菜单项 | 作用 |
 | --- | --- |
-| **批量操作 / Select multiple** | Enters multi-select mode, preselecting that session |
-| **归档会话 / Archive session** | Built-in Harness action |
-| **删除会话 / Delete session** | Permanently deletes this session |
+| 批量操作 | 进入多选模式，并选中当前这条会话 |
+| 归档会话 | Harness 自带功能 |
+| 删除会话 | 永久删除这条会话 |
 
-### Multi-select mode
+### 多选模式
 
-- A checkbox appears in each session row's leading cell
-- A bar at the sidebar foot offers **全选 (Select all)**, a selected count, **批量归档**, **批量删除** and **退出**
-- **Esc** leaves multi-select mode
+进入多选后：
 
-### Settings → 会话设置 / Session settings
+- 每条会话左侧会出现一个**复选框**，点击即可勾选
+- 侧栏底部出现操作栏：**全选**、已选数量、**批量归档**、**批量删除**、**退出**
+- 按 **Esc** 随时退出多选
 
-Lists every archived session with its title, on-disk size and last-write time, each with **恢复 (Restore)** and **删除 (Delete)**, plus select-all, **批量恢复** and **批量删除**.
+勾选完成后按「批量归档」把它们收进归档列表，或按「批量删除」彻底清掉。
 
-## How deletion works
+> 如果某条会话正忙（运行中或有新消息），它左侧的复选框会被状态圆点占用。这时用右键菜单里的「批量操作」来选中它。
 
-The shipped Harness exposes archiving but no way to delete a session log. This plugin's Host half owns that one destructive operation:
+### 设置 → 会话设置
 
-1. Refuses while a live Agent still owns the session
-2. Drops the archive and pin entries and detaches Workspace accounting
-3. Removes the session directory (`$DSH_HOME/sessions/<workspace>/<id>`) and its projection-cache file
-4. Announces the removal so the sidebar list refreshes
+这里列出所有**已归档**的会话，每条显示标题、占用空间和最后修改时间。
 
-A client action reaches the Host through one fenced `POST /better-session/api` route; the browser never touches the filesystem.
+- 单条操作：**恢复**（放回侧栏列表）、**删除**（永久移除）
+- 批量操作：勾选多条后，用**批量恢复**或**批量删除**
+- 顶部有**全选**，可一次选中当前所有已归档会话
 
-## Install
+删除前一定会弹窗确认，并明确提示无法恢复。
 
-Add the package to a DSH profile:
+## 需要注意
 
-```sh
-dsh plugin install https://github.com/Terie412/dsh-better-session
-```
+- **正在打开的会话无法删除。** 如果某个会话还开着，删除会被拒绝，先关掉它再操作。
+- **删除范围**包括会话本身的记录和它的本地缓存，所以占用的空间会真正回收。
+- 归档不进回收站、也不占用额外空间，想留个后路就用归档。
 
-Or from a local checkout, point the profile at the directory:
-
-```sh
-dsh plugin install /path/to/dsh-better-session
-```
-
-Then enable the bundle in the profile's plugin list.
-
-## Layout
-
-```
-index.js           Host half — the fenced API route and permanent deletion
-client.js          Client half — menu rows, multi-select bar, settings page
-cordis.patch.yml   Bundle patch inserting the plugin row
-locale/            Display metadata (zh, en)
-icon.svg           Plugin artwork
-```
-
-## License
+## 许可证
 
 MIT

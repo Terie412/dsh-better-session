@@ -1,6 +1,7 @@
 {
   "meta": {
     "title": "Session manager",
-    "description": "Batch-archive or permanently delete sessions, and manage archived sessions in Settings."
+    "description": "Batch-archive or permanently delete sessions, and manage archived sessions in Settings.",
+    "detail": "README.en.md"
   }
 }
