@@ -23,7 +23,7 @@ import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
 
 /** Route the Client half posts to. */
-const API_PATH = '/session-mgr/api'
+const API_PATH = '/better-session/api'
 
 /** Session ids are `session-<uuid>`; anything else is refused before it can
  *  reach a path join. */

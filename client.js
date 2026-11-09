@@ -20,7 +20,7 @@ window.__ModuleLoader__.load({
     /** Dictionary namespace owned by this plugin. */
     const NS = 'sessionMgr'
     /** Host route mounted by index.js. */
-    const API_PATH = 'session-mgr/api'
+    const API_PATH = 'better-session/api'
     const EMPTY = []
 
     const zh = {
@@ -399,20 +399,20 @@ window.__ModuleLoader__.load({
       const menus = ctx.get('contextMenus')
       if (menus?.register === undefined) return () => {}
       const disposeIcons = [
-        ctx.slots.register({ name: 'contextMenu.icon', key: 'session-mgr.batch' },
+        ctx.slots.register({ name: 'contextMenu.icon', key: 'better-session.batch' },
           () => icon(ICON_BATCH, 14)),
-        ctx.slots.register({ name: 'contextMenu.icon', key: 'session-mgr.delete' },
+        ctx.slots.register({ name: 'contextMenu.icon', key: 'better-session.delete' },
           () => icon(ICON_TRASH, 14)),
       ]
       const disposeBatch = menus.register({
-        id: 'session-mgr.batch',
+        id: 'better-session.batch',
         target: 'session',
         // Above the built-in archive row (600), so it opens the footer block.
         order: 550,
         resolve: ({ sessionId }) => [{
           id: 'batch',
           label: t('menu.batch'),
-          icon: { key: 'session-mgr.batch' },
+          icon: { key: 'better-session.batch' },
           // 归档会话 already declares a separator before itself; a second one
           // here would draw two adjacent lines in the footer.
           afterContent: true,
@@ -420,14 +420,14 @@ window.__ModuleLoader__.load({
         }],
       })
       const disposeDelete = menus.register({
-        id: 'session-mgr.delete',
+        id: 'better-session.delete',
         target: 'session',
         // Last row of the footer, after the built-in archive row.
         order: 700,
         resolve: ({ sessionId }) => [{
           id: 'delete',
           label: t('menu.delete'),
-          icon: { key: 'session-mgr.delete' },
+          icon: { key: 'better-session.delete' },
           danger: true,
           afterContent: true,
           run: () => { void runDelete([sessionId], undefined, 'sidebar') },
@@ -907,28 +907,28 @@ window.__ModuleLoader__.load({
 
         ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register({
           name: 'sidebar.session.row.leading',
-          id: 'session-mgr-lead',
+          id: 'better-session-lead',
           order: 5,
           locale: NS,
         }, rowSelectLeading))
 
         ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
           name: 'sidebar.footer.action',
-          id: 'session-mgr-batch',
+          id: 'better-session-batch',
           order: 10,
           locale: NS,
         }, footerBatchBar))
 
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({
           name: 'shell.overlay',
-          id: 'session-mgr-confirm',
+          id: 'better-session-confirm',
           order: 900,
           locale: NS,
         }, confirmOverlay))
 
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
-          id: 'session-mgr',
+          id: 'better-session',
           order: 45,
           label: () => t('settings.label'),
           locale: NS,
