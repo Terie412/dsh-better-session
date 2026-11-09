@@ -232,7 +232,63 @@ function announceRemoval (ctx, id) {
 }
 
 /**
+ * How long to wait for a Session's Agent to leave the registry after its work
+ * was stopped. The stop path cancels the turn and asks each provider to stand
+ * down; teardown then settles on its own schedule, so this is a bounded wait
+ * rather than a condition.
+ */
+const RELEASE_TIMEOUT_MS = 5000
+/** Poll interval while waiting for the Agent registry to drop the Session. */
+const RELEASE_POLL_MS = 100
+
+/**
+ * Ask the Host to stop whatever the Session is doing, the same way archiving
+ * with `stopActivity` does: cancel the running turn, then stop subagent
+ * descendants, owned jobs, and active schedules through their own cancel
+ * paths. This is the supported way to take a live Session out of use.
+ * @param ctx - Host plugin context.
+ * @param id - the Session id.
+ * @returns whether a stop was requested.
+ */
+async function stopActivity (ctx, id) {
+  const registry = ctx.get('workspaceRegistry')
+  if (registry === undefined) return false
+  // Archiving with stopActivity marks the archive set durable first, then asks
+  // the providers to stop; the caller unarchives afterwards when it only
+  // wanted the release. Without active work this also succeeds.
+  try {
+    await registry.archiveSession(id, { stopActivity: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Wait until the Session's Agent leaves the registry, or the wait expires.
+ * @param ctx - Host plugin context.
+ * @param id - the Session id.
+ * @returns true when no live Agent holds the Session any more.
+ */
+async function waitForRelease (ctx, id) {
+  const agents = ctx.get('agents')
+  if (agents === undefined || agents.get(id) === undefined) return true
+  const deadline = Date.now() + RELEASE_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, RELEASE_POLL_MS))
+    if (agents.get(id) === undefined) return true
+  }
+  return agents.get(id) === undefined
+}
+
+/**
  * Permanently delete one Session.
+ *
+ * A Session with a live Agent is released first: its work is stopped through
+ * the Host's own stop path and its Agent is given a bounded chance to leave
+ * the registry. The log is then removed even if the Agent lingers — the
+ * platform does not keep the file locked, and the Session is gone from the
+ * list either way, so there is nothing left for the Agent to write to.
  * @param ctx - Host plugin context.
  * @param home - DSH home directory.
  * @param id - the Session id.
@@ -242,10 +298,14 @@ async function deleteSession (ctx, home, id) {
   if (typeof id !== 'string' || !SESSION_ID.test(id)) {
     return { sessionId: String(id), deleted: false, code: 'bad-id', message: 'not a Session id' }
   }
-  // A live Agent still owns this Session: its conversation would break.
+
+  // Release a live Session before touching its files: stop the running work,
+  // then wait for the Agent to leave. `released` reports whether it did.
   const agents = ctx.get('agents')
+  let released = true
   if (agents !== undefined && agents.get(id) !== undefined) {
-    return { sessionId: id, deleted: false, code: 'session-live', message: 'session is open in this process' }
+    await stopActivity(ctx, id)
+    released = await waitForRelease(ctx, id)
   }
 
   const registry = ctx.get('workspaceRegistry')
@@ -278,7 +338,15 @@ async function deleteSession (ctx, home, id) {
     }
   }
   announceRemoval(ctx, id)
-  return { sessionId: id, deleted: true, bytes: located.bytes, removed: targets.length }
+  return {
+    sessionId: id,
+    deleted: true,
+    bytes: located.bytes,
+    removed: targets.length,
+    // False when the Session had a live Agent that outlasted the release wait;
+    // the files are gone regardless, but the window may still show it.
+    released,
+  }
 }
 
 /** Hard dependencies: the route carrier, and the Session registry reads. */
@@ -336,8 +404,10 @@ export function apply (ctx) {
             writeJson(res, 400, { ok: false, error: { code: 'unconfirmed', message: 'confirm:true is required' } })
             return
           }
-          const results = []
-          for (const id of ids) results.push(await deleteSession(ctx, home, id))
+          // Delete in parallel: each Session may wait for its own Agent to be
+          // released, and the waits are independent, so running them one after
+          // another would multiply the delay by the batch size.
+          const results = await Promise.all(ids.map(id => deleteSession(ctx, home, id)))
           writeJson(res, 200, { ok: true, value: { results } })
           return
         }

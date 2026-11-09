@@ -68,7 +68,7 @@ Deletion always asks for confirmation first, and says clearly that it cannot be 
 
 ## Things to know
 
-- **A session that is currently open cannot be deleted.** If one is open, the deletion is refused — close it first, then try again.
+- **A running session can be deleted too.** Its work is stopped first through the same cancel path your own stop button uses, then the files are removed, so you do not have to close it beforehand.
 - **What gets removed** is the session's own record together with its local cache, which is why the space is really freed.
 - Archiving never goes to a recycle bin and costs no extra space, so use it when you want to keep a way back.
 
