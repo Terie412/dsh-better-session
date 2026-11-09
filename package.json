@@ -53,5 +53,8 @@
         "@deepseek-ai/dsh-client-ui-settings"
       ]
     }
+  },
+  "scripts": {
+    "test": "node test/redo.mjs && node test/already-redone.mjs"
   }
 }

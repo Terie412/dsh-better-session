@@ -9,7 +9,7 @@
  */
 import { commitReplacement, balancedAtCount, standInText, validateSpan } from '../src/redo/commit.js'
 import { resolveMessageSeq, turnText } from '../src/redo/flow.js'
-import { buildSummaryPrompt, locateTurn, surfaceRange } from '../src/redo/turn.js'
+import { alreadyReplaced, buildSummaryPrompt, locateTurn, surfaceRange } from '../src/redo/turn.js'
 
 let failures = 0
 function check (name, ok, detail) {
@@ -243,8 +243,9 @@ try {
 }
 check('a fragmented turn is refused', fragmented?.code === 'fragmented-turn', String(fragmented?.code))
 
+
+// The already-redone case lives in test/already-redone.mjs: it needs its own
+// fixtures, and sharing them here made the case unreadable.
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`)
 process.exit(failures === 0 ? 0 : 1)
-
-
 

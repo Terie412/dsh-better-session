@@ -92,6 +92,35 @@ export function locateTurn (session, messageSeq) {
 }
 
 /**
+ * Whether a replacement already covers this turn's range.
+ *
+ * A redone turn has no live surface nodes left: the stand-in that replaced it
+ * owns those positions. Detecting that turns "nothing to replace" into an
+ * accurate answer instead of a confusing failure, and it also stops a second
+ * redo from stacking summaries on the same turn.
+ * @param session - the live Session.
+ * @param startSeq - the turn's `turn/start` seq.
+ * @param endSeq - the turn's `turn/end` seq.
+ * @returns whether a `replace` already covers the range.
+ */
+export function alreadyReplaced (session, startSeq, endSeq) {
+  const events = typeof session.snapshotEvents === 'function'
+    ? session.snapshotEvents()
+    : typeof session.ownEvents === 'function'
+      ? session.ownEvents()
+      : session.events
+  const all = Array.isArray(events) ? events : Array.from(events ?? [])
+  for (const event of all) {
+    const op = event?.surfaceOp
+    if (op === null || typeof op !== 'object' || op.op !== 'replace') continue
+    // Any overlap is enough: a span already split by a replacement is not a
+    // valid target either.
+    if (op.startSeq <= endSeq && op.endSeq >= startSeq) return true
+  }
+  return false
+}
+
+/**
  * The inclusive surface span one turn occupies.
  *
  * Compaction addresses surface nodes, not raw log positions, because an
@@ -119,8 +148,12 @@ export function surfaceRange (session, startSeq, endSeq) {
     if (seq >= startSeq && seq <= endSeq) inside.push({ index, seq })
   }
   if (inside.length === 0) {
-    // Report the neighbourhood instead of a bare "nothing found": the caller's
-    // turn bounds and the surrounding surface are what make this diagnosable.
+    // Nearly always this means the turn was ALREADY redone: its nodes are
+    // shadowed by the stand-in that replaced them, so there is nothing left to
+    // rewrite. Say that instead of reporting a bare empty range.
+    if (alreadyReplaced(session, startSeq, endSeq)) {
+      throw redoError(409, 'already-redone', 'this turn has already been redone')
+    }
     const min = nodes.length === 0 ? null : nodes.reduce((a, b) => (a < b ? a : b))
     const max = nodes.length === 0 ? null : nodes.reduce((a, b) => (a > b ? a : b))
     const around = nodes.filter((seq) => seq >= startSeq - 40 && seq <= endSeq + 40).slice(0, 24)
