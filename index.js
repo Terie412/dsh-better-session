@@ -197,48 +197,6 @@ async function describeSessions (ctx, home, ids) {
 }
 
 /**
- * Every Session with the facts the ordering panel sorts by.
- *
- * `createdAt` is not on the Client's live summary, so it is read from the
- * Host's own persistence records, which carry the durable header. A Session
- * whose header cannot be read keeps `createdAt: 0` and sorts last by that
- * mode rather than disappearing.
- * @param ctx - Host plugin context.
- * @param home - DSH home directory.
- * @returns `{ sessions }` in newest-first order.
- */
-async function listOrderableSessions (ctx, home) {
-  const query = ctx.get('sessionQuery')
-  const records = query === undefined ? [] : await query.listSessions().catch(() => [])
-  const titles = await readTitles(ctx, records.map(record => record.header.id))
-
-  // Workspace membership, so the panel can group without a second round-trip.
-  const registry = ctx.get('workspaceRegistry')
-  const membership = new Map()
-  if (registry !== undefined) {
-    for (const workspace of registry.list()) {
-      for (const id of workspace.sessionIds) membership.set(id, String(workspace.id))
-    }
-  }
-
-  const sessions = []
-  for (const record of records) {
-    const id = record.header.id
-    const located = await locateSession(home, id)
-    sessions.push({
-      sessionId: id,
-      title: titles.get(id) ?? null,
-      createdAt: typeof record.header.createdAt === 'number' ? record.header.createdAt : 0,
-      updatedAt: located.updatedAt,
-      bytes: located.bytes,
-      workspaceId: membership.get(id) ?? null,
-    })
-  }
-  sessions.sort((a, b) => b.updatedAt - a.updatedAt || String(a.sessionId).localeCompare(String(b.sessionId)))
-  return { sessions }
-}
-
-/**
  * Drop a Session from every Workspace accounting slot. Deleting the log is
  * what makes the Session disappear from the list; this keeps the stored
  * registry from carrying a dangling id.
@@ -438,10 +396,6 @@ export function apply (ctx) {
         if (method === 'describe') {
           const ids = Array.isArray(payload.sessionIds) ? payload.sessionIds.filter(id => typeof id === 'string').slice(0, 500) : []
           writeJson(res, 200, { ok: true, value: { sessions: await describeSessions(ctx, home, ids) } })
-          return
-        }
-        if (method === 'list') {
-          writeJson(res, 200, { ok: true, value: await listOrderableSessions(ctx, home) })
           return
         }
         if (method === 'delete') {

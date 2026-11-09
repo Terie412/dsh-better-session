@@ -41,34 +41,6 @@ Right-click any session → **Delete session**, confirm the dialog, and it is go
 - In batch: select some, then **Restore selected** or **Delete selected**
 - **Select all** at the top selects everything
 
-### 4. Session order
-
-Click **Session order** in the sidebar's panel list to open the ordering page.
-
-The built-in sidebar offers only manual drag order or newest-updated, and that choice is global. This page adds more criteria, **kept per workspace**:
-
-| Sort by | Meaning |
-| --- | --- |
-| Last updated | Most recent activity |
-| Created | When the session was created |
-| Name | Title in alphabetical order |
-| Size | Disk space used |
-
-Each workspace has an **Asc ↑ / Desc ↓** button to flip direction. Settings are saved automatically.
-
-### 5. Redo a turn
-
-If a turn went wrong, redo it instead of starting a new session.
-
-**How**: hover your own message and **Redo this turn** appears. Open it, edit the text if you want, and send.
-
-**What happens**: that turn is replaced in the model's history by a summary, then your edited text is asked again.
-
-- Turns under 600 characters are not summarized; the original is wrapped in a notice instead — faster and cheaper
-- Only the history the model sees is rewritten; the original turn stays visible in the UI
-- **Files already written are not reverted** — this differs from editing a file
-- Only **finished** turns can be redone; the button is hidden while the agent is running
-
 ## Notes
 
 - Archiving costs no extra space and is reversible — use it to keep a way back. Delete only when you are sure
