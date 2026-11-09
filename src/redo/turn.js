@@ -97,16 +97,28 @@ export function locateTurn (session, messageSeq) {
  * @returns `{ start, end }` inclusive surface seqs.
  */
 export function surfaceRange (session, startSeq, endSeq) {
-  let start = null
-  let end = null
-  for (const seq of session.surface.nodes) {
-    if (seq >= startSeq && start === null) start = seq
-    if (seq <= endSeq) end = seq
+  // Positions, not numbers: a replacement appends a node whose seq is HIGHER
+  // than the range it shadows while sitting EARLIER on the surface, so the node
+  // list is not monotonic and comparing seqs would pick the wrong edges. The
+  // turn owns the contiguous run of surface positions whose nodes were logged
+  // inside it.
+  const nodes = session.surface.nodes
+  const inside = []
+  for (let index = 0; index < nodes.length; index += 1) {
+    const seq = nodes[index]
+    if (seq >= startSeq && seq <= endSeq) inside.push({ index, seq })
   }
-  if (start === null || end === null || start > end) {
+  if (inside.length === 0) {
     throw redoError(400, 'empty-range', 'that turn has no model-visible messages')
   }
-  return { start, end }
+  // The run must be contiguous; a gap means an earlier replacement already
+  // removed part of this turn, and replacing across it would split that one.
+  const first = inside[0]
+  const last = inside[inside.length - 1]
+  if (last.index - first.index !== inside.length - 1) {
+    throw redoError(409, 'fragmented-turn', 'this turn was already partly replaced')
+  }
+  return { start: first.seq, end: last.seq }
 }
 
 /**

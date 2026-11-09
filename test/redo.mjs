@@ -224,6 +224,25 @@ try {
 }
 check('a message without a source is not matched', bareMiss?.code === 'message-not-found')
 
+// A replacement appends a node whose seq is HIGHER than the range it shadows
+// while sitting EARLIER on the surface, so the node list is not monotonic. A
+// numeric comparison here would silently pick the wrong edges — this is the
+// shape that made a real redo fail with "no model-visible messages".
+const nonMonotonic = [2, 3, 500, 6, 7]
+const replaced = surfaceRange(fakeSession(twoTurns, nonMonotonic), 5, 8)
+check('non-monotonic surface still finds the right run', replaced.start === 6 && replaced.end === 7, JSON.stringify(replaced))
+
+// A turn whose nodes are not contiguous was already partly replaced; replacing
+// across the gap would split the earlier replacement. Turn 1 spans 1..4, and
+// node 3 is missing while a later node still belongs to it.
+let fragmented = null
+try {
+  surfaceRange(fakeSession(twoTurns, [2, 6, 3]), 1, 4)
+} catch (error) {
+  fragmented = error
+}
+check('a fragmented turn is refused', fragmented?.code === 'fragmented-turn', String(fragmented?.code))
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`)
 process.exit(failures === 0 ? 0 : 1)
 
