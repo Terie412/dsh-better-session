@@ -618,6 +618,46 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // ── Settings nav icon ──────────────────────────────────────────────────
+    /**
+     * The 会话设置 navigation glyph: two stacked speech bubbles.
+     *
+     * Drawn to the Host's own icon contract so it sits level with the built-in
+     * settings rows — 16×16 viewBox, no fill, `currentColor`, medium stroke
+     * (1.3 at that viewBox), round joins/caps. The owner passes the square edge
+     * (`size: 16`) and lets the glyph inherit the row's text colour, so the
+     * active row tints it without a second rule here.
+     * @param props - the settings nav row's presentation.
+     * @returns the inline SVG.
+     */
+    function SessionSettingsIcon (props) {
+      const size = typeof props?.size === 'number' && props.size > 0 ? props.size : 16
+      return h('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        viewBox: '0 0 16 16',
+        width: size,
+        height: size,
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.3,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+        'aria-hidden': true,
+        style: { display: 'block', flex: 'none' },
+      },
+      // Back bubble: the upper-right sheet. Both open ends land exactly on the
+      // front bubble's outline, so it reads as emerging from behind it rather
+      // than as strokes floating inside it.
+      h('path', {
+        d: 'M 5.6 4.4 V 3.1 A 1.6 1.6 0 0 1 7.2 1.5 H 12.8 A 1.6 1.6 0 0 1 14.4 3.1 V 6.9 A 1.6 1.6 0 0 1 12.8 8.5 H 9.9',
+      }),
+      // Front bubble with a pointer hanging from its bottom edge.
+      h('path', {
+        d: 'M 3.1 4.4 H 8.3 A 1.6 1.6 0 0 1 9.9 6.0 V 10.0 A 1.6 1.6 0 0 1 8.3 11.6 H 6.5 L 5.0 13.5 L 3.6 11.6 H 3.1 A 1.6 1.6 0 0 1 1.5 10.0 V 6.0 A 1.6 1.6 0 0 1 3.1 4.4 Z',
+      }),
+      )
+    }
+
     // ── Settings: archived-session manager ────────────────────────────────
     /** The archived list arrives through the slot's own workspace hook. */
     function sessionSettingsWithProps (props) {
@@ -925,6 +965,15 @@ window.__ModuleLoader__.load({
           order: 900,
           locale: NS,
         }, confirmOverlay))
+
+        // The icon registration id must equal the section id, or the shell
+        // never renders it and keeps its default gear.
+        ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
+          name: 'settings.section.icon',
+          id: 'better-session',
+          order: 45,
+          locale: NS,
+        }, SessionSettingsIcon))
 
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
