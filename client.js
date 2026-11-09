@@ -69,6 +69,7 @@ window.__ModuleLoader__.load({
       'result.failed': '有 {count} 个会话删除失败：{reason}',
       'error.offline': '无法连接本地会话管理服务',
       'redo.action': '重做这一轮',
+      'redo.short': '重做',
       'redo.title': '重做这一轮',
       'redo.hint': '发送后，这一轮的历史会被摘要替换，然后按你改后的内容重新提问。已经写入的文件不会被撤销，界面上原有的这一轮也会保留。',
       'redo.confirm': '发送',
@@ -115,6 +116,7 @@ window.__ModuleLoader__.load({
       'result.failed': '{count} sessions could not be deleted: {reason}',
       'error.offline': 'Cannot reach the local session management service',
       'redo.action': 'Redo this turn',
+      'redo.short': 'Redo',
       'redo.title': 'Redo this turn',
       'redo.hint': 'Sending replaces this turn with a summary, then asks your edited text again. Files already written are not undone, and the original turn stays visible here.',
       'redo.confirm': 'Send',
@@ -945,8 +947,8 @@ window.__ModuleLoader__.load({
 .dsm-item-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dsm-item-actions{display:flex;align-items:center;gap:2px;flex:none}
 .dsm-empty{font-size:13px;color:var(--dsw-alias-label-secondary);padding:18px 4px}
-.dsr-before{display:flex;justify-content:flex-end;padding:0 2px 2px}
-.dsr-action{border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;line-height:16px;cursor:pointer;padding:1px 4px;border-radius:var(--dsw-radius-sm,6px);opacity:0;transition:opacity .12s ease}
+.dsr-before{display:flex;justify-content:flex-end;padding:0 2px 1px}
+.dsr-action{display:inline-flex;align-items:center;gap:4px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;line-height:16px;cursor:pointer;padding:1px 6px;border-radius:var(--dsw-radius-sm,6px);opacity:.5;transition:opacity .12s ease,color .12s ease,background .12s ease}
 .dsr-before:hover .dsr-action,.dsr-action:focus-visible{opacity:1}
 .dsr-action:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2)}
 .dsr-scrim{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:24px}
@@ -1020,12 +1022,18 @@ window.__ModuleLoader__.load({
       const useSession = props?.useSession
       const session = typeof useSession === 'function' ? useSession((state) => state) : undefined
 
-      if (props?.kind !== 'user') return null
+      // The elected component receives the selector's result as `matched`, not
+      // the owner props: `select` is a pure router, and the chosen entry gets
+      // both the owner props and this value. Read it, and fall back to the
+      // owner props so a selector that returns the props themselves still works.
+      const matched = props?.matched ?? props
+      const kind = matched?.kind ?? props?.kind
+      if (kind !== 'user') return null
       const sessionId = props?.sessionId
       if (typeof sessionId !== 'string' || sessionId === '') return null
       if (session?.running === true) return null
 
-      const source = props?.source
+      const source = matched?.source ?? props?.source
       const rpcId = typeof source?.rpcId === 'string' ? source.rpcId : undefined
       // A row with no submission identity cannot be addressed; offering no
       // control beats offering one that rewrites the wrong turn.
@@ -1047,7 +1055,24 @@ window.__ModuleLoader__.load({
               error: null,
             })
           },
-        }, t('redo.action')))
+        },
+        h('svg', {
+          viewBox: '0 0 16 16',
+          width: 12,
+          height: 12,
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 1.4,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': true,
+          style: { display: 'block', flex: 'none' },
+        },
+        h('path', { d: 'M11.4 2.6l2 2-7.4 7.4-2.6.6.6-2.6z' }),
+        h('path', { d: 'M10 4l2 2' }),
+        ),
+        h('span', null, t('redo.short')),
+        ))
     }
 
     /** The one redo dialog, portalled above the Settings window. */
@@ -1201,10 +1226,20 @@ window.__ModuleLoader__.load({
         // ── Redo one turn ────────────────────────────────────────────────────
         // The button sits above each user bubble; the dialog lives in the
         // overlay so it can cover the whole frame. Both share one store.
+        //
+        // `select` is a pure router: returning null for a row keeps the slot
+        // empty there, and a non-null result is rendered and receives that
+        // value as `matched`. Only a durable user row with a submission id can
+        // be redone, so the decision belongs here, not in the component.
         ctx.slots.inject('conversation.chat.user.before', () => ctx.slots.register({
           name: 'conversation.chat.user.before',
-          select: () => redoButton,
-        }))
+          select: (owner) => {
+            if (owner?.kind !== 'user') return null
+            const source = owner?.source
+            if (typeof source?.rpcId !== 'string' || source.rpcId === '') return null
+            return { source, kind: owner.kind }
+          },
+        }, redoButton))
 
         ctx.slots.inject('shell.overlay', () => ctx.slots.register({
           name: 'shell.overlay',
@@ -1237,4 +1272,5 @@ window.__ModuleLoader__.load({
     }
   },
 })
+
 
