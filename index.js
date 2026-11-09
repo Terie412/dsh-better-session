@@ -392,10 +392,25 @@ async function redoOne (ctx, payload) {
     }, undefined)
     // Ask the edited text only after the replacement is committed and durable,
     // so the new turn is answered against the history the operator intended.
-    await agent.prompt({
-      content: [{ type: 'text', text: redo.nextText }],
+    //
+    // The prompt goes through the Session controller's own admission route: an
+    // Agent exposes cancellation and lifecycle, not prompt submission, and the
+    // controller is the one owner that logs the request header and hands the
+    // content to the loop.
+    const controller = ctx.get('sessionController')
+    if (typeof controller?.prompt !== 'function') {
+      throw routeError(501, 'no-prompt', 'this profile cannot admit prompts')
+    }
+    const requestId = `redo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    await controller.prompt({
+      requestId,
+      sessionId,
+      // `queue` rather than `steer`: the replacement just closed the turn, so
+      // there is no running turn to steer and the edit should simply start the
+      // next one.
       mode: 'queue',
-    })
+      content: [{ type: 'text', text: redo.nextText }],
+    }, new AbortController().signal)
     return redo
   } finally {
     redoLocks.delete(sessionId)

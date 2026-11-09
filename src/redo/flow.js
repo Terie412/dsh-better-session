@@ -194,7 +194,13 @@ export async function redoTurn (ctx, agent, request, signal) {
   // The durable barrier matters: the replacement must be on disk before the
   // follow-up prompt runs, or a crash would resume a session whose history
   // claims the old turn is still current.
-  await ctx.sessions?.flush?.(session)
+  //
+  // `ctx.get` rather than `ctx.sessions`: this plugin declares only the route
+  // carrier as a hard dependency, so the property form would throw. Flushing is
+  // best effort in a profile without persistence, which is exactly what the
+  // optional lookup expresses.
+  const sessions = ctx.get('sessions')
+  if (typeof sessions?.flush === 'function') await sessions.flush(session)
 
   return {
     turn: located.turn,
