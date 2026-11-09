@@ -17,6 +17,16 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
     const { useSyncExternalStore, useMemo, useState, useEffect, useCallback, useRef } = React
+    // `react-dom` is part of the browser module table the shell provides. The
+    // lookup is guarded so a composition without it falls back to inline
+    // rendering instead of throwing at module load.
+    let createPortal = null
+    try {
+      const ReactDOM = require('react-dom')
+      if (typeof ReactDOM?.createPortal === 'function') createPortal = ReactDOM.createPortal
+    } catch {
+      createPortal = null
+    }
     /** Dictionary namespace owned by this plugin. */
     const NS = 'sessionMgr'
     /** Host route mounted by index.js. */
@@ -603,7 +613,7 @@ window.__ModuleLoader__.load({
       }, [pending, busy])
 
       if (pending === null) return null
-      return h('div', { className: 'dsm-scrim' },
+      const dialog = h('div', { className: 'dsm-scrim' },
         h('div', {
           className: 'dsm-modal',
           role: 'alertdialog',
@@ -626,6 +636,13 @@ window.__ModuleLoader__.load({
         ),
         ),
       )
+      // The shell overlay this entry lives in is z-index 20, while the Settings
+      // panel portals itself at 1000, so a dialog left in place would sit
+      // BEHIND the settings window it was opened from. Portalling to the body
+      // takes the dialog out of that stacking context entirely.
+      return createPortal !== null
+        ? createPortal(dialog, document.body)
+        : dialog
     }
 
     // ── Settings nav icon ──────────────────────────────────────────────────
