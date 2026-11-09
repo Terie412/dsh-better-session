@@ -57,7 +57,13 @@ export function locateTurn (session, messageSeq) {
   let startSeq = null
   let endSeq = null
   let userText = null
-  for (const event of session.ownEvents()) {
+  // `snapshotEvents()` is the whole log. `ownEvents()` is deprecated and starts
+  // after a fork-inherited prefix, so a resumed or forked session would hide the
+  // very turns a redo wants to address.
+  const events = typeof session.snapshotEvents === 'function'
+    ? session.snapshotEvents()
+    : session.ownEvents()
+  for (const event of events) {
     if (event.type === 'turn/start' && event.seq <= messageSeq) {
       // Keep the latest start at or before the message: several turns exist,
       // and the message belongs to the last one that began before it.
@@ -77,10 +83,10 @@ export function locateTurn (session, messageSeq) {
     }
   }
   if (turn === null || startSeq === null) {
-    throw redoError(400, 'turn-not-found', 'no turn starts at or before that message')
+    throw redoError(400, 'turn-not-found', `no turn starts at or before message ${messageSeq} (${events.length} events scanned)`)
   }
   if (endSeq === null) {
-    throw redoError(409, 'turn-open', 'that turn is still running')
+    throw redoError(409, 'turn-open', `turn ${turn} is still running`)
   }
   return { turn, startSeq, endSeq, userText }
 }
@@ -102,21 +108,38 @@ export function surfaceRange (session, startSeq, endSeq) {
   // list is not monotonic and comparing seqs would pick the wrong edges. The
   // turn owns the contiguous run of surface positions whose nodes were logged
   // inside it.
-  const nodes = session.surface.nodes
+  const raw = session.surface?.nodes
+  // `nodes` is documented as the ordered surface set, but its runtime container
+  // is not part of that contract: accept any iterable and materialize it once so
+  // indexing works either way.
+  const nodes = Array.isArray(raw) ? raw : Array.from(raw ?? [])
   const inside = []
   for (let index = 0; index < nodes.length; index += 1) {
     const seq = nodes[index]
     if (seq >= startSeq && seq <= endSeq) inside.push({ index, seq })
   }
   if (inside.length === 0) {
-    throw redoError(400, 'empty-range', 'that turn has no model-visible messages')
+    // Report the neighbourhood instead of a bare "nothing found": the caller's
+    // turn bounds and the surrounding surface are what make this diagnosable.
+    const min = nodes.length === 0 ? null : nodes.reduce((a, b) => (a < b ? a : b))
+    const max = nodes.length === 0 ? null : nodes.reduce((a, b) => (a > b ? a : b))
+    const around = nodes.filter((seq) => seq >= startSeq - 40 && seq <= endSeq + 40).slice(0, 24)
+    throw redoError(
+      400,
+      'empty-range',
+      `that turn has no model-visible messages (turn ${startSeq}..${endSeq}; surface has ${nodes.length} nodes, seq ${min}..${max}; nearby: ${around.join(',') || 'none'})`,
+    )
   }
   // The run must be contiguous; a gap means an earlier replacement already
   // removed part of this turn, and replacing across it would split that one.
   const first = inside[0]
   const last = inside[inside.length - 1]
   if (last.index - first.index !== inside.length - 1) {
-    throw redoError(409, 'fragmented-turn', 'this turn was already partly replaced')
+    throw redoError(
+      409,
+      'fragmented-turn',
+      `this turn was already partly replaced (${inside.length} nodes spanning positions ${first.index}..${last.index})`,
+    )
   }
   return { start: first.seq, end: last.seq }
 }

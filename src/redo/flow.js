@@ -129,11 +129,16 @@ export function resolveMessageSeq (session, request) {
   if (rpcId === '') {
     throw redoError(400, 'no-target', 'either messageSeq or rpcId is required')
   }
-  for (const event of session.ownEvents()) {
+  // The whole log: `ownEvents()` is deprecated and skips a fork-inherited
+  // prefix, so the message being redone could be invisible in a resumed session.
+  const events = typeof session.snapshotEvents === 'function'
+    ? session.snapshotEvents()
+    : session.ownEvents()
+  for (const event of events) {
     if (event.type !== 'user/message') continue
     if (event.data?.source?.rpcId === rpcId) return event.seq
   }
-  throw redoError(404, 'message-not-found', 'that message is not in this session log')
+  throw redoError(404, 'message-not-found', `that message is not in this session log (${events.length} events scanned)`)
 }
 
 /**
