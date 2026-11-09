@@ -364,7 +364,7 @@ const redoLocks = new Set()
  * write would race whatever resumes it later and the follow-up prompt would
  * address a history the caller no longer matches.
  * @param ctx - Host plugin context.
- * @param payload - `{ sessionId, messageSeq, text? }`.
+ * @param payload - `{ sessionId, rpcId?, messageSeq?, text? }`.
  * @returns the redo record plus the prompt receipt.
  */
 async function redoOne (ctx, payload) {
@@ -383,6 +383,10 @@ async function redoOne (ctx, payload) {
   redoLocks.add(sessionId)
   try {
     const redo = await redoTurn(ctx, agent, {
+      // The page addresses a message by its submission identity, because the
+      // row props carry only `source`. Forwarding it is what lets the Host find
+      // the turn; a sequence number is still accepted for direct callers.
+      rpcId: payload?.rpcId,
       messageSeq: payload?.messageSeq,
       text: payload?.text,
     }, undefined)

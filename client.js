@@ -971,20 +971,38 @@ window.__ModuleLoader__.load({
     /**
      * Shared state for the redo surfaces: the per-message button and the one
      * dialog they all open.
+     *
+     * Kept on `window` rather than in a module local: this plugin is installed
+     * from a linked directory, so editing it reloads the Client module and a
+     * module-local store would silently drop the dialog mid-edit. The slot
+     * keeps a stable key across that reload, so the state survives with it.
      */
-    let redoState = {
-      open: false,
-      sessionId: null,
-      targetRpcId: null,
-      text: '',
-      busy: false,
-      error: null,
-      notice: null,
+    const REDO_STORE_KEY = '__dshBetterSessionRedo'
+    function redoStore () {
+      const existing = globalThis[REDO_STORE_KEY]
+      if (existing !== undefined && existing !== null) return existing
+      const created = {
+        state: {
+          open: false,
+          sessionId: null,
+          targetRpcId: null,
+          text: '',
+          busy: false,
+          error: null,
+          notice: null,
+        },
+        listeners: new Set(),
+      }
+      globalThis[REDO_STORE_KEY] = created
+      return created
     }
-    const redoListeners = new Set()
+    const redoShared = redoStore()
+    let redoState = redoShared.state
+    const redoListeners = redoShared.listeners
 
     function redoEmit (patch) {
       redoState = { ...redoState, ...patch }
+      redoShared.state = redoState
       for (const listener of [...redoListeners]) listener()
     }
 
