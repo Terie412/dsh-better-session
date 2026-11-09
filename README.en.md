@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Session management for DeepSeek Harness: batch actions, permanent deletion, one place to manage archived sessions, and redoing a turn.
+Session management for DeepSeek Harness: batch actions, permanent deletion, and one place to manage archived sessions.
 
 > ⚠️ **Deletion cannot be undone.** Sessions are removed from disk, not moved to a recycle bin — that is what actually frees the space.
 
@@ -40,19 +40,6 @@ Right-click any session → **Delete session**, confirm the dialog, and it is go
 - Per session: **Restore** (back to the sidebar) or **Delete**
 - In batch: select some, then **Restore selected** or **Delete selected**
 - **Select all** at the top selects everything
-
-### 4. Redo a turn
-
-If a turn went wrong, redo it instead of starting a new session.
-
-**How**: hover your own message and **Redo this turn** appears. Open it, edit the text if you want, and send.
-
-**What happens**: that turn is replaced in the model's history by a summary, then your edited text is asked again.
-
-- Turns under 600 characters are not summarized; the original is wrapped in a notice instead — faster and cheaper
-- Only the history the model sees is rewritten; the original turn stays visible in the UI
-- **Files already written are not reverted** — this differs from editing a file
-- Only **finished** turns can be redone; the button is hidden while the agent is running
 
 ## Notes
 

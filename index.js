@@ -21,7 +21,6 @@
 import { readdir, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
-import { redoTurn } from './src/redo/flow.js'
 
 /** Route the Client half posts to. */
 const API_PATH = '/better-session/api'
@@ -353,84 +352,6 @@ async function deleteSession (ctx, home, id) {
 /** Hard dependencies: the route carrier, and the Session registry reads. */
 export const inject = ['webServer']
 
-/** Session ids currently running a redo, so two clicks cannot interleave. */
-const redoLocks = new Set()
-
-/**
- * Redo one turn end to end: replace its history, then ask the edited text.
- *
- * A live Agent is mandatory. The replacement is a durable write into the
- * Session surface, so a cold Session must be resumed first — otherwise the
- * write would race whatever resumes it later and the follow-up prompt would
- * address a history the caller no longer matches.
- * @param ctx - Host plugin context.
- * @param payload - `{ sessionId, rpcId?, messageSeq?, text? }`.
- * @returns the redo record plus the prompt receipt.
- */
-async function redoOne (ctx, payload) {
-  const sessionId = typeof payload?.sessionId === 'string' ? payload.sessionId : ''
-  if (!SESSION_ID.test(sessionId)) {
-    throw routeError(400, 'bad-session', 'not a Session id')
-  }
-  const agents = ctx.get('agents')
-  const agent = agents?.get(sessionId)
-  if (agent === undefined) {
-    throw routeError(409, 'no-agent', 'that session is not running; open it first')
-  }
-  if (redoLocks.has(sessionId)) {
-    throw routeError(409, 'busy', 'another redo is already running in this session')
-  }
-  redoLocks.add(sessionId)
-  try {
-    const redo = await redoTurn(ctx, agent, {
-      // The page addresses a message by its submission identity, because the
-      // row props carry only `source`. Forwarding it is what lets the Host find
-      // the turn; a sequence number is still accepted for direct callers.
-      rpcId: payload?.rpcId,
-      messageSeq: payload?.messageSeq,
-      text: payload?.text,
-    }, undefined)
-    // Ask the edited text only after the replacement is committed and durable,
-    // so the new turn is answered against the history the operator intended.
-    //
-    // The prompt goes through the Session controller's own admission route: an
-    // Agent exposes cancellation and lifecycle, not prompt submission, and the
-    // controller is the one owner that logs the request header and hands the
-    // content to the loop.
-    const controller = ctx.get('sessionController')
-    if (typeof controller?.prompt !== 'function') {
-      throw routeError(501, 'no-prompt', 'this profile cannot admit prompts')
-    }
-    const requestId = `redo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-    await controller.prompt({
-      requestId,
-      sessionId,
-      // `queue` rather than `steer`: the replacement just closed the turn, so
-      // there is no running turn to steer and the edit should simply start the
-      // next one.
-      mode: 'queue',
-      content: [{ type: 'text', text: redo.nextText }],
-    }, new AbortController().signal)
-    return redo
-  } finally {
-    redoLocks.delete(sessionId)
-  }
-}
-
-/**
- * Build a rejection carrying an HTTP status and a stable code.
- * @param status - HTTP status code.
- * @param code - stable machine code.
- * @param message - human-readable text.
- * @returns the throwable error.
- */
-function routeError (status, code, message) {
-  const error = new Error(message)
-  error.status = status
-  error.code = code
-  return error
-}
-
 /**
  * Host half: mount the fenced API route.
  * @param ctx - Host plugin context.
@@ -477,10 +398,6 @@ export function apply (ctx) {
           writeJson(res, 200, { ok: true, value: { sessions: await describeSessions(ctx, home, ids) } })
           return
         }
-        if (method === 'redo') {
-          writeJson(res, 200, { ok: true, value: await redoOne(ctx, payload) })
-          return
-        }
         if (method === 'delete') {
           const ids = Array.isArray(payload.sessionIds) ? payload.sessionIds.filter(id => typeof id === 'string').slice(0, 500) : []
           if (payload.confirm !== true) {
@@ -496,14 +413,7 @@ export function apply (ctx) {
         }
         writeJson(res, 404, { ok: false, error: { code: 'unknown-method', message: String(method) } })
       } catch (error) {
-        // Preserve a classified rejection: the page distinguishes a busy
-        // session from an internal failure, and a blanket 500 erases that.
-        const status = typeof error?.status === 'number' ? error.status : 500
-        const code = typeof error?.code === 'string' ? error.code : 'internal'
-        writeJson(res, status, {
-          ok: false,
-          error: { code, message: error instanceof Error ? error.message : String(error) },
-        })
+        writeJson(res, 500, { ok: false, error: { code: 'internal', message: error instanceof Error ? error.message : String(error) } })
       }
     },
   }), 'dsh-better-session: session management API')

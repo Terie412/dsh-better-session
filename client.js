@@ -68,16 +68,6 @@ window.__ModuleLoader__.load({
       'result.deletedLingering': '已删除 {count} 个会话（其中 {lingering} 个仍在关闭中，列表可能稍后才消失）',
       'result.failed': '有 {count} 个会话删除失败：{reason}',
       'error.offline': '无法连接本地会话管理服务',
-      'redo.action': '重做这一轮',
-      'redo.short': '重做',
-      'redo.title': '重做这一轮',
-      'redo.hint': '发送后，这一轮的历史会被摘要替换，然后按你改后的内容重新提问。已经写入的文件不会被撤销，界面上原有的这一轮也会保留。',
-      'redo.confirm': '发送',
-      'redo.cancel': '取消',
-      'redo.running': '处理中…',
-      'redo.empty': '内容不能为空',
-      'redo.doneSummary': '已重做，历史已用摘要替换',
-      'redo.doneNotice': '已重做，历史已用原文包起来的说明替换',
     }
 
     const en = {
@@ -115,16 +105,6 @@ window.__ModuleLoader__.load({
       'result.deletedLingering': 'Deleted {count} sessions ({lingering} still shutting down; they may leave the list shortly)',
       'result.failed': '{count} sessions could not be deleted: {reason}',
       'error.offline': 'Cannot reach the local session management service',
-      'redo.action': 'Redo this turn',
-      'redo.short': 'Redo',
-      'redo.title': 'Redo this turn',
-      'redo.hint': 'Sending replaces this turn with a summary, then asks your edited text again. Files already written are not undone, and the original turn stays visible here.',
-      'redo.confirm': 'Send',
-      'redo.cancel': 'Cancel',
-      'redo.running': 'Working…',
-      'redo.empty': 'The message cannot be empty',
-      'redo.doneSummary': 'Redone — history replaced with a summary',
-      'redo.doneNotice': 'Redone — history replaced with a wrapped notice',
     }
 
     let translate = (key) => key
@@ -924,7 +904,7 @@ window.__ModuleLoader__.load({
 .dsm-notice--ok{color:var(--dsw-alias-state-success-primary)}
 .dsm-notice--error{color:var(--dsw-alias-state-error-primary)}
 .dsm-scrim{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:24px}
-.dsm-modal{width:min(420px,100%);display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.35)}
+.dsm-modal{width:min(420px,100%);display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-overlay);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.35)}
 .dsm-modal-title{font-size:15px;font-weight:600;line-height:22px}
 .dsm-modal-body{font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}
 .dsm-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
@@ -947,235 +927,7 @@ window.__ModuleLoader__.load({
 .dsm-item-meta{font-size:11px;line-height:15px;color:var(--dsw-alias-label-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dsm-item-actions{display:flex;align-items:center;gap:2px;flex:none}
 .dsm-empty{font-size:13px;color:var(--dsw-alias-label-secondary);padding:18px 4px}
-.dsr-before{display:flex;justify-content:flex-end;padding:0 2px 1px}
-.dsr-action{display:inline-flex;align-items:center;gap:4px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;line-height:16px;cursor:pointer;padding:1px 6px;border-radius:var(--dsw-radius-sm,6px);opacity:.5;transition:opacity .12s ease,color .12s ease,background .12s ease}
-.dsr-before:hover .dsr-action,.dsr-action:focus-visible{opacity:1}
-.dsr-action:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2)}
-.dsr-scrim{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:24px}
-.dsr-modal{width:min(560px,100%);display:flex;flex-direction:column;gap:10px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.35)}
-.dsr-title{font-size:15px;font-weight:600;line-height:22px}
-.dsr-text{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font:inherit;font-size:13px;line-height:20px;resize:vertical;min-height:80px}
-.dsr-text:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-1px}
-.dsr-text:disabled{opacity:.6}
-.dsr-hint{font-size:12px;line-height:17px;color:var(--dsw-alias-label-secondary)}
-.dsr-error{font-size:12px;line-height:17px;color:var(--dsw-alias-state-error-primary);word-break:break-word}
-.dsr-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:2px}
-.dsr-btn{display:inline-flex;align-items:center;justify-content:center;padding:4px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:12px;line-height:18px;cursor:pointer;white-space:nowrap}
-.dsr-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.16))}
-.dsr-btn:disabled{opacity:.45;cursor:default}
-.dsr-btn--primary{background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-bg-base);font-weight:500}
-.dsr-btn--primary:hover:not(:disabled){background:var(--dsw-alias-brand-primary);border-color:var(--dsw-alias-brand-primary);filter:brightness(1.08)}
 `
-
-    // ── Redo one turn ──────────────────────────────────────────────────────
-    /**
-     * Shared state for the redo surfaces: the per-message button and the one
-     * dialog they all open.
-     *
-     * Kept on `window` rather than in a module local: this plugin is installed
-     * from a linked directory, so editing it reloads the Client module and a
-     * module-local store would silently drop the dialog mid-edit. The slot
-     * keeps a stable key across that reload, so the state survives with it.
-     */
-    const REDO_STORE_KEY = '__dshBetterSessionRedo'
-    function redoStore () {
-      const existing = globalThis[REDO_STORE_KEY]
-      if (existing !== undefined && existing !== null) return existing
-      const created = {
-        state: {
-          open: false,
-          sessionId: null,
-          targetRpcId: null,
-          text: '',
-          busy: false,
-          error: null,
-          notice: null,
-        },
-        listeners: new Set(),
-      }
-      globalThis[REDO_STORE_KEY] = created
-      return created
-    }
-    const redoShared = redoStore()
-    let redoState = redoShared.state
-    const redoListeners = redoShared.listeners
-
-    function redoEmit (patch) {
-      redoState = { ...redoState, ...patch }
-      redoShared.state = redoState
-      for (const listener of [...redoListeners]) listener()
-    }
-
-    function redoSubscribe (listener) {
-      redoListeners.add(listener)
-      return () => { redoListeners.delete(listener) }
-    }
-
-    function useRedo (selector) {
-      const read = useCallback(() => selector(redoState), [selector])
-      return useSyncExternalStore(redoSubscribe, read, read)
-    }
-
-    /**
-     * The redo button above one user message.
-     *
-     * Rendered only for a durable user row in an idle Session: a redo rewrites
-     * committed history, so it must not be offered while the agent is running.
-     * The button stays invisible until the bubble is hovered, so it never
-     * competes with the message itself.
-     *
-     * The owner props carry the durable message `source` and nothing else that
-     * identifies a position — by design, since Chat does not interpret sources.
-     * What they do carry is the submission's `rpcId`, which the Host resolves
-     * against the session log. That keeps the lookup authoritative: a guessed
-     * position would rewrite the wrong turn.
-     * @param props - owner props of `conversation.chat.user.before`.
-     * @returns the button, or null when this row is not redoable.
-     */
-    function redoButton (props) {
-      const open = useRedo((state) => state.open)
-      const openTarget = useRedo((state) => state.targetRpcId)
-      // Every hook is called before any early return, so the order stays stable
-      // across rows that do and do not render a button.
-      const useSession = props?.useSession
-      const session = typeof useSession === 'function' ? useSession((state) => state) : undefined
-
-      // The elected component receives the selector's result as `matched`, not
-      // the owner props: `select` is a pure router, and the chosen entry gets
-      // both the owner props and this value. Read it, and fall back to the
-      // owner props so a selector that returns the props themselves still works.
-      const matched = props?.matched ?? props
-      const kind = matched?.kind ?? props?.kind
-      if (kind !== 'user') return null
-      const sessionId = props?.sessionId
-      if (typeof sessionId !== 'string' || sessionId === '') return null
-      if (session?.running === true) return null
-
-      const source = matched?.source ?? props?.source
-      const rpcId = typeof source?.rpcId === 'string' ? source.rpcId : undefined
-      // A row with no submission identity cannot be addressed; offering no
-      // control beats offering one that rewrites the wrong turn.
-      if (rpcId === undefined) return null
-      if (open && openTarget === rpcId) return null
-      return h('div', { className: 'dsr-before' },
-        h('button', {
-          type: 'button',
-          className: 'dsr-action',
-          title: t('redo.action'),
-          'aria-label': t('redo.action'),
-          onClick: () => {
-            redoEmit({
-              open: true,
-              sessionId,
-              targetRpcId: rpcId,
-              text: '',
-              busy: false,
-              error: null,
-            })
-          },
-        },
-        h('svg', {
-          viewBox: '0 0 16 16',
-          width: 12,
-          height: 12,
-          fill: 'none',
-          stroke: 'currentColor',
-          strokeWidth: 1.4,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          'aria-hidden': true,
-          style: { display: 'block', flex: 'none' },
-        },
-        h('path', { d: 'M11.4 2.6l2 2-7.4 7.4-2.6.6.6-2.6z' }),
-        h('path', { d: 'M10 4l2 2' }),
-        ),
-        h('span', null, t('redo.short')),
-        ))
-    }
-
-    /** The one redo dialog, portalled above the Settings window. */
-    function redoOverlay () {
-      const open = useRedo((state) => state.open)
-      const busy = useRedo((state) => state.busy)
-      const error = useRedo((state) => state.error)
-      const text = useRedo((state) => state.text)
-      const boxRef = useRef(null)
-
-      useEffect(() => {
-        if (!open) return undefined
-        const onKey = (event) => {
-          if (event.key !== 'Escape' || redoState.busy) return
-          // The dialog owns Escape while it is open.
-          event.stopPropagation()
-          redoEmit({ open: false, error: null })
-        }
-        window.addEventListener('keydown', onKey, true)
-        return () => window.removeEventListener('keydown', onKey, true)
-      }, [open])
-
-      useEffect(() => {
-        if (open && boxRef.current !== null) boxRef.current.focus()
-      }, [open])
-
-      if (!open) return null
-
-      const submit = async () => {
-        if (redoState.busy) return
-        const trimmed = redoState.text.trim()
-        if (trimmed === '') {
-          redoEmit({ error: t('redo.empty') })
-          return
-        }
-        redoEmit({ busy: true, error: null })
-        try {
-          const value = await callHost('redo', {
-            sessionId: redoState.sessionId,
-            rpcId: redoState.targetRpcId,
-            text: trimmed,
-          })
-          redoEmit({
-            open: false,
-            busy: false,
-            notice: value?.mode === 'summary' ? t('redo.doneSummary') : t('redo.doneNotice'),
-          })
-        } catch (failure) {
-          redoEmit({ busy: false, error: String(failure?.message ?? failure) })
-        }
-      }
-
-      const dialog = h('div', { className: 'dsr-scrim' },
-        h('div', {
-          className: 'dsr-modal',
-          role: 'dialog',
-          'aria-modal': 'true',
-          'aria-labelledby': 'dsr-title',
-        },
-        h('div', { className: 'dsr-title', id: 'dsr-title' }, t('redo.title')),
-        h('textarea', {
-          ref: boxRef,
-          className: 'dsr-text',
-          value: text,
-          rows: 4,
-          disabled: busy,
-          'aria-label': t('redo.title'),
-          onChange: (event) => redoEmit({ text: event.target.value, error: null }),
-        }),
-        h('div', { className: 'dsr-hint' }, t('redo.hint')),
-        error === null ? null : h('div', { className: 'dsr-error', role: 'alert' }, error),
-        h('div', { className: 'dsr-actions' },
-          h('button', {
-            type: 'button', className: 'dsr-btn', disabled: busy,
-            onClick: () => redoEmit({ open: false, error: null }),
-          }, t('redo.cancel')),
-          h('button', {
-            type: 'button', className: 'dsr-btn dsr-btn--primary', disabled: busy,
-            onClick: () => { void submit() },
-          }, busy ? t('redo.running') : t('redo.confirm')),
-        ),
-        ),
-      )
-      return createPortal !== null ? createPortal(dialog, document.body) : dialog
-    }
 
     /** One style tag for the whole plugin, removed with the client run. */
     function mountStyles () {
@@ -1241,31 +993,6 @@ window.__ModuleLoader__.load({
           locale: NS,
         }, confirmOverlay))
 
-        // ── Redo one turn ────────────────────────────────────────────────────
-        // The button sits above each user bubble; the dialog lives in the
-        // overlay so it can cover the whole frame. Both share one store.
-        //
-        // `select` is a pure router: returning null for a row keeps the slot
-        // empty there, and a non-null result is rendered and receives that
-        // value as `matched`. Only a durable user row with a submission id can
-        // be redone, so the decision belongs here, not in the component.
-        ctx.slots.inject('conversation.chat.user.before', () => ctx.slots.register({
-          name: 'conversation.chat.user.before',
-          select: (owner) => {
-            if (owner?.kind !== 'user') return null
-            const source = owner?.source
-            if (typeof source?.rpcId !== 'string' || source.rpcId === '') return null
-            return { source, kind: owner.kind }
-          },
-        }, redoButton))
-
-        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-          name: 'shell.overlay',
-          id: 'better-session-redo',
-          order: 910,
-          locale: NS,
-        }, redoOverlay))
-
         // The icon registration id must equal the section id, or the shell
         // never renders it and keeps its default gear.
         ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
@@ -1290,5 +1017,3 @@ window.__ModuleLoader__.load({
     }
   },
 })
-
-
