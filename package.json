@@ -1,7 +1,7 @@
 {
   "name": "dsh-better-session",
-  "version": "1.0.0",
-  "description": "Batch session operations for DeepSeek Harness: multi-select archive and permanent delete in the sidebar, plus an archived-session manager in Settings.",
+  "version": "1.1.0",
+  "description": "Batch session operations for DeepSeek Harness: multi-select archive and permanent delete, an archived-session manager, and redoing a completed turn in place.",
   "type": "module",
   "icon": "./icon.svg",
   "exports": {
@@ -13,11 +13,13 @@
   "files": [
     "index.js",
     "client.js",
+    "src/**/*.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
     "README.md",
-    "README.en.md"
+    "README.en.md",
+    "docs/*.md"
   ],
   "keywords": [
     "deepseek-harness",

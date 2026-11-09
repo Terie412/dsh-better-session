@@ -973,7 +973,7 @@ window.__ModuleLoader__.load({
     let redoState = {
       open: false,
       sessionId: null,
-      messageSeq: null,
+      targetRpcId: null,
       text: '',
       busy: false,
       error: null,
@@ -1003,23 +1003,34 @@ window.__ModuleLoader__.load({
      * committed history, so it must not be offered while the agent is running.
      * The button stays invisible until the bubble is hovered, so it never
      * competes with the message itself.
+     *
+     * The owner props carry the durable message `source` and nothing else that
+     * identifies a position — by design, since Chat does not interpret sources.
+     * What they do carry is the submission's `rpcId`, which the Host resolves
+     * against the session log. That keeps the lookup authoritative: a guessed
+     * position would rewrite the wrong turn.
      * @param props - owner props of `conversation.chat.user.before`.
      * @returns the button, or null when this row is not redoable.
      */
     function redoButton (props) {
       const open = useRedo((state) => state.open)
-      const seq = useRedo((state) => state.messageSeq)
-      // `useSession` is a hook supplied by the owner; it is always called so the
-      // hook order stays stable, and its answer decides the render below.
+      const openTarget = useRedo((state) => state.targetRpcId)
+      // Every hook is called before any early return, so the order stays stable
+      // across rows that do and do not render a button.
       const useSession = props?.useSession
       const session = typeof useSession === 'function' ? useSession((state) => state) : undefined
+
       if (props?.kind !== 'user') return null
       const sessionId = props?.sessionId
       if (typeof sessionId !== 'string' || sessionId === '') return null
       if (session?.running === true) return null
-      const messageSeq = typeof props?.source?.seq === 'number' ? props.source.seq : undefined
-      if (messageSeq === undefined) return null
-      if (open && seq === messageSeq) return null
+
+      const source = props?.source
+      const rpcId = typeof source?.rpcId === 'string' ? source.rpcId : undefined
+      // A row with no submission identity cannot be addressed; offering no
+      // control beats offering one that rewrites the wrong turn.
+      if (rpcId === undefined) return null
+      if (open && openTarget === rpcId) return null
       return h('div', { className: 'dsr-before' },
         h('button', {
           type: 'button',
@@ -1030,7 +1041,7 @@ window.__ModuleLoader__.load({
             redoEmit({
               open: true,
               sessionId,
-              messageSeq,
+              targetRpcId: rpcId,
               text: '',
               busy: false,
               error: null,
@@ -1076,7 +1087,7 @@ window.__ModuleLoader__.load({
         try {
           const value = await callHost('redo', {
             sessionId: redoState.sessionId,
-            messageSeq: redoState.messageSeq,
+            rpcId: redoState.targetRpcId,
             text: trimmed,
           })
           redoEmit({
@@ -1226,3 +1237,4 @@ window.__ModuleLoader__.load({
     }
   },
 })
+

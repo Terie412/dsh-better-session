@@ -8,7 +8,7 @@
  * Usage: node test/redo.mjs
  */
 import { commitReplacement, balancedAtCount, standInText, validateSpan } from '../src/redo/commit.js'
-import { turnText } from '../src/redo/flow.js'
+import { resolveMessageSeq, turnText } from '../src/redo/flow.js'
 import { buildSummaryPrompt, locateTurn, surfaceRange } from '../src/redo/turn.js'
 
 let failures = 0
@@ -184,7 +184,48 @@ check('includes the user text', prompt.includes('first'))
 check('includes the assistant text', prompt.includes('ok'))
 check('caps the length', /120 words/.test(prompt))
 
+// ══ Message targeting by rpcId ═════════════════════════════════════════════
+// The Client only ever sees the message SOURCE, which is
+// { kind, rpcId, clientTimeZone } — no id and no position. The Host resolves the
+// submission identity against the log, so this lookup is the contract that keeps
+// a redo from rewriting the wrong turn.
+console.log('\nresolveMessageSeq')
+const rpcSession = fakeSession([
+  { type: 'user/message', seq: 2, data: { role: 'user', content: [{ type: 'text', text: 'a' }], source: { kind: 'user', rpcId: 'rpc-a' } } },
+  { type: 'user/message', seq: 6, data: { role: 'user', content: [{ type: 'text', text: 'b' }], source: { kind: 'user', rpcId: 'rpc-b' } } },
+], [2, 6])
+
+check('an explicit seq is honoured', resolveMessageSeq(rpcSession, { messageSeq: 6 }) === 6)
+check('rpcId resolves to its log position', resolveMessageSeq(rpcSession, { rpcId: 'rpc-b' }) === 6)
+check('a different rpcId resolves differently', resolveMessageSeq(rpcSession, { rpcId: 'rpc-a' }) === 2)
+
+let noTarget = null
+try {
+  resolveMessageSeq(rpcSession, {})
+} catch (error) {
+  noTarget = error
+}
+check('a request with neither field is refused', noTarget?.code === 'no-target', String(noTarget?.code))
+
+let unknownRpc = null
+try {
+  resolveMessageSeq(rpcSession, { rpcId: 'rpc-nope' })
+} catch (error) {
+  unknownRpc = error
+}
+check('an unknown rpcId is refused, not guessed', unknownRpc?.code === 'message-not-found', String(unknownRpc?.code))
+
+const bareSession = fakeSession([{ type: 'user/message', seq: 3, data: { role: 'user', content: [] } }], [3])
+let bareMiss = null
+try {
+  resolveMessageSeq(bareSession, { rpcId: 'anything' })
+} catch (error) {
+  bareMiss = error
+}
+check('a message without a source is not matched', bareMiss?.code === 'message-not-found')
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`)
 process.exit(failures === 0 ? 0 : 1)
+
 
 

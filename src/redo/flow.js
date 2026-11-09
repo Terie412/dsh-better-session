@@ -111,6 +111,32 @@ export async function summarizeTurn (ctx, agent, session, shadowedSeqs, signal) 
 }
 
 /**
+ * Resolve which log position a redo request names.
+ *
+ * The Client can supply a sequence directly, but the row props it receives
+ * carry only the message `source`, which is `{ kind, rpcId, clientTimeZone }` —
+ * no id and no position. The `rpcId` is the submission's own identity, so the
+ * authoritative lookup happens here, over the log, instead of in the browser.
+ * @param session - the live Session.
+ * @param request - `{ messageSeq?, rpcId? }`.
+ * @returns the message's sequence number.
+ */
+export function resolveMessageSeq (session, request) {
+  const direct = Number(request?.messageSeq)
+  if (Number.isSafeInteger(direct) && direct >= 0) return direct
+
+  const rpcId = typeof request?.rpcId === 'string' ? request.rpcId : ''
+  if (rpcId === '') {
+    throw redoError(400, 'no-target', 'either messageSeq or rpcId is required')
+  }
+  for (const event of session.ownEvents()) {
+    if (event.type !== 'user/message') continue
+    if (event.data?.source?.rpcId === rpcId) return event.seq
+  }
+  throw redoError(404, 'message-not-found', 'that message is not in this session log')
+}
+
+/**
  * Perform one redo.
  *
  * Serialized by the caller per session: two concurrent redos of the same turn
@@ -118,17 +144,14 @@ export async function summarizeTurn (ctx, agent, session, shadowedSeqs, signal) 
  * be refused after the first had already changed history.
  * @param ctx - Host plugin context.
  * @param agent - the live Agent owning the Session.
- * @param request - `{ messageSeq, text? }`, where `text` is the edited message.
+ * @param request - `{ messageSeq? , rpcId?, text? }`, where `text` is the edited message.
  * @param signal - cancellation.
  * @returns the committed record plus how the stand-in was produced.
  */
 export async function redoTurn (ctx, agent, request, signal) {
   const session = agent.session
   if (session === undefined) throw redoError(400, 'no-session', 'that agent has no session')
-  const seq = Number(request?.messageSeq)
-  if (!Number.isSafeInteger(seq) || seq < 0) {
-    throw redoError(400, 'bad-seq', 'messageSeq must be a surface sequence number')
-  }
+  const seq = resolveMessageSeq(session, request)
 
   const located = locateTurn(session, seq)
   const range = surfaceRange(session, located.startSeq, located.endSeq)
