@@ -14,9 +14,9 @@
  *   accounting.
  *
  * Everything is exposed over one fenced POST route so the Client half never
- * needs filesystem access. A live Agent refuses deletion: its Session is
- * still owned by the runtime, and removing the log underneath it would make
- * the running conversation unrecoverable.
+ * needs filesystem access. Deletion stops the Session's running work and
+ * closes its admission gate before removing the log, so nothing can start a
+ * new step on a log that is already gone.
  */
 import { readdir, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -197,15 +197,26 @@ async function describeSessions (ctx, home, ids) {
 }
 
 /**
- * Drop a Session from every Workspace accounting slot. Deleting the log is
- * what makes the Session disappear from the list; this keeps the stored
- * registry from carrying a dangling id.
+ * Drop every durable reference to a deleted Session: the archive and pin
+ * sets, and each Workspace's accounting slot. Called only after the log is
+ * gone, so a failed removal leaves the Session archived and retryable from
+ * the management page instead of orphaning a file no list can reach.
  * @param ctx - Host plugin context.
  * @param id - the Session id.
  */
-async function detachFromWorkspaces (ctx, id) {
+async function forgetSession (ctx, id) {
   const registry = ctx.get('workspaceRegistry')
   if (registry === undefined) return
+  try {
+    await registry.unarchiveSession(id)
+  } catch {
+    // Already absent.
+  }
+  try {
+    await registry.unpinSession(id)
+  } catch {
+    // Already absent.
+  }
   for (const workspace of registry.list()) {
     if (!workspace.sessionIds.includes(id)) continue
     try {
@@ -232,63 +243,39 @@ function announceRemoval (ctx, id) {
 }
 
 /**
- * How long to wait for a Session's Agent to leave the registry after its work
- * was stopped. The stop path cancels the turn and asks each provider to stand
- * down; teardown then settles on its own schedule, so this is a bounded wait
- * rather than a condition.
- */
-const RELEASE_TIMEOUT_MS = 5000
-/** Poll interval while waiting for the Agent registry to drop the Session. */
-const RELEASE_POLL_MS = 100
-
-/**
- * Ask the Host to stop whatever the Session is doing, the same way archiving
- * with `stopActivity` does: cancel the running turn, then stop subagent
- * descendants, owned jobs, and active schedules through their own cancel
- * paths. This is the supported way to take a live Session out of use.
+ * Stop a Session's work and close its admission gate before the log is removed.
+ *
+ * Archiving with `stopActivity` is the platform's own stop path: it writes
+ * the archive set durably (which makes the archived-session gate reject any
+ * later model step over the whole subagent lineage) and then dispatches
+ * `workspace/session-stop`, whose providers cancel the running turn, its
+ * subagent descendants, owned jobs, and active schedules through the same
+ * cancel paths the user's stop actions use. It neither tears the Agent down
+ * nor closes its log handle, so deletion must not wait for either. Best-effort:
+ * a registry that is absent or refuses never blocks the deletion.
  * @param ctx - Host plugin context.
  * @param id - the Session id.
- * @returns whether a stop was requested.
  */
-async function stopActivity (ctx, id) {
+async function stopSession (ctx, id) {
   const registry = ctx.get('workspaceRegistry')
-  if (registry === undefined) return false
-  // Archiving with stopActivity marks the archive set durable first, then asks
-  // the providers to stop; the caller unarchives afterwards when it only
-  // wanted the release. Without active work this also succeeds.
+  if (registry === undefined) return
   try {
     await registry.archiveSession(id, { stopActivity: true })
-    return true
   } catch {
-    return false
+    // No registry, unknown Session, or already archived; the log removal
+    // stands on its own.
   }
-}
-
-/**
- * Wait until the Session's Agent leaves the registry, or the wait expires.
- * @param ctx - Host plugin context.
- * @param id - the Session id.
- * @returns true when no live Agent holds the Session any more.
- */
-async function waitForRelease (ctx, id) {
-  const agents = ctx.get('agents')
-  if (agents === undefined || agents.get(id) === undefined) return true
-  const deadline = Date.now() + RELEASE_TIMEOUT_MS
-  while (Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, RELEASE_POLL_MS))
-    if (agents.get(id) === undefined) return true
-  }
-  return agents.get(id) === undefined
 }
 
 /**
  * Permanently delete one Session.
  *
- * A Session with a live Agent is released first: its work is stopped through
- * the Host's own stop path and its Agent is given a bounded chance to leave
- * the registry. The log is then removed even if the Agent lingers — the
- * platform does not keep the file locked, and the Session is gone from the
- * list either way, so there is nothing left for the Agent to write to.
+ * Running work is stopped and the admission gate is closed, then the log and
+ * projection cache are removed from disk, and finally every durable
+ * reference to the Session is dropped. Deletion never waits for the Agent's
+ * lifecycle to wind down: the archive gate already blocks new steps, and the
+ * platform does not keep the log file locked, so there is nothing left to
+ * write to.
  * @param ctx - Host plugin context.
  * @param home - DSH home directory.
  * @param id - the Session id.
@@ -299,29 +286,7 @@ async function deleteSession (ctx, home, id) {
     return { sessionId: String(id), deleted: false, code: 'bad-id', message: 'not a Session id' }
   }
 
-  // Release a live Session before touching its files: stop the running work,
-  // then wait for the Agent to leave. `released` reports whether it did.
-  const agents = ctx.get('agents')
-  let released = true
-  if (agents !== undefined && agents.get(id) !== undefined) {
-    await stopActivity(ctx, id)
-    released = await waitForRelease(ctx, id)
-  }
-
-  const registry = ctx.get('workspaceRegistry')
-  if (registry !== undefined) {
-    try {
-      await registry.unarchiveSession(id)
-    } catch {
-      // Already unarchived.
-    }
-    try {
-      await registry.unpinSession(id)
-    } catch {
-      // Already unpinned.
-    }
-  }
-  await detachFromWorkspaces(ctx, id)
+  await stopSession(ctx, id)
 
   const located = await locateSession(home, id)
   const targets = [...located.dirs, located.cacheFile]
@@ -337,15 +302,14 @@ async function deleteSession (ctx, home, id) {
       }
     }
   }
+
+  await forgetSession(ctx, id)
   announceRemoval(ctx, id)
   return {
     sessionId: id,
     deleted: true,
     bytes: located.bytes,
     removed: targets.length,
-    // False when the Session had a live Agent that outlasted the release wait;
-    // the files are gone regardless, but the window may still show it.
-    released,
   }
 }
 
@@ -404,9 +368,8 @@ export function apply (ctx) {
             writeJson(res, 400, { ok: false, error: { code: 'unconfirmed', message: 'confirm:true is required' } })
             return
           }
-          // Delete in parallel: each Session may wait for its own Agent to be
-          // released, and the waits are independent, so running them one after
-          // another would multiply the delay by the batch size.
+          // Independent Sessions, so one stalled registry write cannot hold up
+          // the rest of the batch.
           const results = await Promise.all(ids.map(id => deleteSession(ctx, home, id)))
           writeJson(res, 200, { ok: true, value: { results } })
           return

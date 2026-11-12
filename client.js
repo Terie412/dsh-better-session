@@ -65,7 +65,6 @@ window.__ModuleLoader__.load({
       'confirm.cancel': '取消',
       'confirm.busy': '正在删除…',
       'result.deleted': '已删除 {count} 个会话',
-      'result.deletedLingering': '已删除 {count} 个会话（其中 {lingering} 个仍在关闭中，列表可能稍后才消失）',
       'result.failed': '有 {count} 个会话删除失败：{reason}',
       'error.offline': '无法连接本地会话管理服务',
     }
@@ -102,7 +101,6 @@ window.__ModuleLoader__.load({
       'confirm.cancel': 'Cancel',
       'confirm.busy': 'Deleting…',
       'result.deleted': 'Deleted {count} sessions',
-      'result.deletedLingering': 'Deleted {count} sessions ({lingering} still shutting down; they may leave the list shortly)',
       'result.failed': '{count} sessions could not be deleted: {reason}',
       'error.offline': 'Cannot reach the local session management service',
     }
@@ -340,9 +338,6 @@ window.__ModuleLoader__.load({
       try {
         const results = await deleteMany(ids)
         const failed = results.filter((row) => row.deleted !== true)
-        // A Session whose Agent outlasted the release wait is still deleted;
-        // report it separately so the user knows the window may be stale.
-        const lingering = results.filter((row) => row.deleted === true && row.released === false)
         setState({
           busy: false,
           notice: {
@@ -353,12 +348,7 @@ window.__ModuleLoader__.load({
                   count: failed.length,
                   reason: failed.map((row) => row.message ?? row.code).join('; '),
                 })
-              : lingering.length > 0
-                ? t('result.deletedLingering', {
-                    count: results.length,
-                    lingering: lingering.length,
-                  })
-                : t('result.deleted', { count: results.length }),
+              : t('result.deleted', { count: results.length }),
           },
         })
         if (failed.length === 0 && typeof after === 'function') after()
