@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Session manager",
+    "title": "dsh-better-session",
     "description": "Batch-archive or permanently delete sessions, and manage archived sessions in Settings.",
     "detail": "README.en.md"
   }
