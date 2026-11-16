@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "dsh-better-session",
-    "description": "批量归档与彻底删除会话，并在设置里集中管理已归档会话。",
+    "description": "批量归档与彻底删除会话、快捷键切换会话，并在会话设置里管理归档与后台完成通知。",
     "detail": "README.md"
   }
 }

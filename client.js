@@ -67,6 +67,28 @@ window.__ModuleLoader__.load({
       'result.deleted': '已删除 {count} 个会话',
       'result.failed': '有 {count} 个会话删除失败：{reason}',
       'error.offline': '无法连接本地会话管理服务',
+      'notify.heading': '完成通知',
+      'notify.enable': '后台会话完成时发送系统通知',
+      'notify.help': '仅提醒当前未查看的会话；长期目标完成后才提醒。取消、失败和子智能体不会提醒。仅在本应用运行且连接正常时有效。',
+      'notify.test': '测试通知',
+      'notify.turn': '会话已完成',
+      'notify.goal': '长期目标已完成',
+      'notify.body': '点击返回对应会话。',
+      'notify.testTitle': 'DeepSeek Harness · 测试通知',
+      'notify.testBody': '系统通知已发送。能否弹出、声音及位置由系统通知设置和免打扰决定。',
+      'notify.denied': '通知权限被拒绝，请在浏览器或系统设置中允许通知后重试。',
+      'notify.unsupported': '当前环境不支持系统通知。',
+      'notify.failed': '系统通知发送失败，请检查系统通知设置。',
+      'notify.sent': '已请求发送测试通知；若未弹出，请检查系统通知设置及免打扰。',
+      'notify.saveFailed': '无法保存通知偏好，请检查浏览器存储设置。',
+      'notify.off': '已关闭',
+      'notify.connected': '已启用，通知连接正常',
+      'notify.connecting': '已启用，正在连接通知服务…',
+      'notify.disconnected': '通知服务连接中断，正在重连；断线期间不会补发通知。',
+      'notify.openFailed': '无法打开通知对应的会话。',
+      'shortcut.previous': '上一个侧栏会话',
+      'shortcut.next': '下一个侧栏会话',
+      'shortcut.unavailable': '当前没有可切换的侧栏会话',
     }
 
     const en = {
@@ -103,6 +125,28 @@ window.__ModuleLoader__.load({
       'result.deleted': 'Deleted {count} sessions',
       'result.failed': '{count} sessions could not be deleted: {reason}',
       'error.offline': 'Cannot reach the local session management service',
+      'notify.heading': 'Completion notifications',
+      'notify.enable': 'Notify when a background session completes',
+      'notify.help': 'Only sessions you are not viewing. Long-running goals notify only on completion. No alerts for cancellations, failures or subagents. Requires this app to stay open and connected.',
+      'notify.test': 'Test notification',
+      'notify.turn': 'Session completed',
+      'notify.goal': 'Long-running goal completed',
+      'notify.body': 'Click to return to this session.',
+      'notify.testTitle': 'DeepSeek Harness · Test notification',
+      'notify.testBody': 'Notification requested. Appearance, sound and position depend on your system settings and Do not disturb.',
+      'notify.denied': 'Notification permission denied. Allow notifications in your browser or system settings and retry.',
+      'notify.unsupported': 'System notifications are not supported in this environment.',
+      'notify.failed': 'Could not send a system notification. Check your system notification settings.',
+      'notify.sent': 'Test notification requested. If it does not appear, check system notifications and Do not disturb.',
+      'notify.saveFailed': 'Could not save your notification preference. Check browser storage settings.',
+      'notify.off': 'Disabled',
+      'notify.connected': 'Enabled and connected',
+      'notify.connecting': 'Enabled; connecting to the notification service…',
+      'notify.disconnected': 'Notification service disconnected; reconnecting. Missed alerts are not replayed.',
+      'notify.openFailed': 'Could not open the session for this notification.',
+      'shortcut.previous': 'Previous sidebar session',
+      'shortcut.next': 'Next sidebar session',
+      'shortcut.unavailable': 'No sidebar session is available for navigation',
     }
 
     let translate = (key) => key
@@ -124,6 +168,10 @@ window.__ModuleLoader__.load({
       settingsSelected: EMPTY,
       pending: null,
       busy: false,
+      notificationsEnabled: false,
+      notificationStatus: 'off',
+      notificationNotice: null,
+      notificationBusy: false,
       /** `{ scope, kind, text }`; scope keeps one surface's news out of the other. */
       notice: null,
       /** Bumped when the active locale changes, so mounted text re-renders. */
@@ -201,6 +249,115 @@ window.__ModuleLoader__.load({
           target.closest('input, textarea, [contenteditable="true"]') !== null) return
       event.preventDefault()
       exitBatch()
+    }
+
+    // ── Session navigation ─────────────────────────────────────────────────
+    /** Pure policy; the caller supplies the sidebar's current rendered order. */
+    function adjacentSessionId (ids, currentId, direction) {
+      const index = ids.indexOf(currentId)
+      return index < 0 ? null : (ids[index + direction] ?? null)
+    }
+
+    /** Exact physical chord only; leave AltGraph, IME and other modifiers alone. */
+    function navigationDirection (gesture) {
+      if (!gesture.alt || gesture.control || gesture.meta || gesture.shift ||
+          gesture.composing || gesture.defaultPrevented) return 0
+      return gesture.code === 'ArrowLeft' ? -1 : gesture.code === 'ArrowRight' ? 1 : 0
+    }
+
+    /** Drawer navigation is allowed, but never navigate behind a real dialog. */
+    function navigationBlocked () {
+      if (snapshot.pending !== null || snapshot.busy) return true
+      return [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], [aria-modal="true"]')]
+        .some(dialog => dialog.dataset.shortcutModal !== 'sidebar' && dialog.getClientRects().length > 0)
+    }
+
+    /**
+     * Display order is browser-local and not exposed by the Workspace service.
+     * Read the owner's stable row markers on demand instead of duplicating its
+     * pin/manual/tree ordering or observing every sidebar update. Collapsed and
+     * Show-more rows are deliberately excluded. No DOM is changed here.
+     */
+    function sidebarSessionIds () {
+      const archived = new Set(archivedIdsNow())
+      const ids = new Set()
+      for (const row of document.querySelectorAll('[data-sidebar-list-area] [data-row-key^="session:"][role="treeitem"]')) {
+        if (row.closest('[inert], [aria-hidden="true"]') !== null || row.getClientRects().length === 0) continue
+        const id = row.dataset.rowKey.slice('session:'.length)
+        if (!archived.has(id)) ids.add(id)
+      }
+      return [...ids]
+    }
+
+    /** Resolve from the same main-view reference the built-in commands use. */
+    function resolveSessionNavigation (direction) {
+      if (navigationBlocked()) return null
+      const sessions = clientService('sessions')?.list?.getSnapshot?.()?.byId
+      const current = Object.values(sessions ?? {}).find(row => (row.retainedBy?.mainView ?? 0) > 0)
+      const navigation = clientService('uiWorkspace')
+      if (current === undefined || typeof navigation?.openSession !== 'function') return null
+      const id = adjacentSessionId(sidebarSessionIds(), current.id, direction)
+      return () => {
+        if (id === null) return
+        navigation.openSession(id)
+        for (const row of document.querySelectorAll('[data-sidebar-list-area] [data-row-key^="session:"][role="treeitem"]')) {
+          if (row.dataset.rowKey === `session:${id}` && row.getClientRects().length > 0) {
+            row.scrollIntoView({ block: 'nearest' })
+            break
+          }
+        }
+      }
+    }
+
+    /** Native Desktop integration takes precedence over editor/native handlers. */
+    function installSessionNavigation (ctx) {
+      const shortcuts = ctx.get('shortcuts')
+      const disposers = []
+      try {
+        const native = shortcuts.runtime === 'desktop' && ['windows', 'macos'].includes(shortcuts.platform)
+        for (const [name, direction, code, arrow] of [
+          ['previous', -1, 'ArrowLeft', '←'], ['next', 1, 'ArrowRight', '→'],
+        ]) {
+          const id = `better-session.${name}`
+          const label = () => t(`shortcut.${name}`)
+          const binding = { code, modifiers: ['alt'] }
+          if (native) {
+            disposers.push(shortcuts.register({
+              id, label, aliases: [`${name} session`],
+              defaults: { 'desktop:windows': binding, 'desktop:macos': binding },
+              regions: ['page', 'editable'], modals: ['sidebar'],
+              resolve: (context) => {
+                if (context.modal !== null && context.modal !== 'sidebar') return { status: 'blocked', reason: t('shortcut.unavailable') }
+                const run = resolveSessionNavigation(direction)
+                return run === null
+                  ? { status: 'blocked', reason: t('shortcut.unavailable') }
+                  : { status: 'handled', run }
+              },
+            }))
+          } else {
+            // Web/Linux's editable registry rejects Alt+arrows. Reserve and
+            // document the fixed chord, and handle only this exact DOM input.
+            disposers.push(shortcuts.registerFixed({ id, label, keys: ['Alt', arrow], bindings: [binding], group: 'application' }))
+          }
+        }
+        if (!native) {
+          // Use the owner's IME/recording arbitration rather than a competing
+          // capture listener. Consume even at a boundary or behind a dialog:
+          // doing nothing must never turn into browser history navigation.
+          disposers.push(shortcuts.observeFixedInput(input => {
+            if (input.type !== 'keydown') return
+            const direction = navigationDirection(input.gesture)
+            if (direction === 0) return
+            input.consume()
+            if (input.gesture.repeat || (input.context.modal !== null && input.context.modal !== 'sidebar')) return
+            resolveSessionNavigation(direction)?.()
+          }))
+        }
+      } catch (error) {
+        for (const dispose of disposers.reverse()) dispose()
+        throw error
+      }
+      return () => { for (const dispose of disposers.reverse()) dispose() }
     }
 
     // ── Client services ────────────────────────────────────────────────────
@@ -306,6 +463,209 @@ window.__ModuleLoader__.load({
       if (ids.length === 0) return EMPTY
       const value = await callHost('delete', { sessionIds: ids, confirm: true })
       return Array.isArray(value?.results) ? value.results : EMPTY
+    }
+
+    // ── Completion notifications ───────────────────────────────────────────
+    // Device-local permission/preferences: never grant Notification permission
+    // from an Agent tool or background event. Only the user's button may ask.
+    const NOTIFY_KEY = 'dsh.better-session.notifications.v1'
+    let notificationRuntime = null
+
+    function installCompletionNotifications () {
+      let disposed = false
+      let source = null
+      const active = new Set()
+      const seen = new Set()
+      const channel = typeof BroadcastChannel === 'function'
+        ? new BroadcastChannel('dsh-better-session-notifications') : null
+      const remember = id => {
+        seen.add(id)
+        if (seen.size > 512) seen.delete(seen.values().next().value)
+      }
+      const waits = new Map()
+      const viewing = sessionId => document.visibilityState === 'visible' && document.hasFocus() &&
+        clientService('layout')?.panelInfo?.getSnapshot?.()?.activePanelId === null && currentSession() === sessionId
+      const receiveClaim = event => {
+        if (typeof event.data === 'string') remember(event.data)
+        else if (event.data?.type === 'query' && viewing(event.data.sessionId)) {
+          remember(event.data.id)
+          channel.postMessage(event.data.id)
+        }
+      }
+      if (channel !== null) channel.onmessage = receiveClaim
+      const supported = () => typeof Notification === 'function' && typeof EventSource === 'function'
+      const enabled = () => snapshot.notificationsEnabled && supported() && Notification.permission === 'granted'
+      const currentSession = () => Object.values(clientService('sessions')?.list?.getSnapshot?.()?.byId ?? {})
+        .find(row => (row.retainedBy?.mainView ?? 0) > 0)?.id
+      const closeActive = () => {
+        for (const item of active) { item.onclick = null; item.onclose = null; item.onerror = null; item.close() }
+        active.clear()
+      }
+      const show = (data, testing = false) => {
+        const row = clientService('sessions')?.list?.getSnapshot?.()?.byId?.[data.sessionId]
+        const title = testing ? t('notify.testTitle')
+          : `DeepSeek Harness · ${t(data.kind === 'goal' ? 'notify.goal' : 'notify.turn')}`
+        const item = new Notification(title, {
+          body: testing ? t('notify.testBody') : `${row?.title || data.sessionId}\n${t('notify.body')}`,
+          tag: testing ? 'dsh-better-session-test' : `dsh-better-session:${data.id}`,
+        })
+        active.add(item)
+        if (active.size > 20) { const oldest = active.values().next().value; oldest.close(); active.delete(oldest) }
+        item.onclose = () => active.delete(item)
+        item.onerror = () => {
+          active.delete(item)
+          if (!disposed) setState({ notificationNotice: 'notify.failed' })
+        }
+        item.onclick = () => {
+          if (disposed) return
+          window.focus()
+          if (!testing && !archivedIdsNow().includes(data.sessionId)) {
+            try {
+              Promise.resolve(clientService('uiWorkspace')?.openSession(data.sessionId)).catch(() => {
+                if (!disposed) setState({ notificationNotice: 'notify.openFailed' })
+              })
+            } catch { setState({ notificationNotice: 'notify.openFailed' }) }
+          }
+          item.close()
+          active.delete(item)
+        }
+      }
+      const handle = async data => {
+        if (!enabled() || typeof data?.id !== 'string' || typeof data.sessionId !== 'string' ||
+            !/^session-[A-Za-z0-9-]+$/.test(data.sessionId) || !['turn', 'goal'].includes(data.kind)) return
+        const deliver = async () => {
+          if (disposed || !enabled() || seen.has(data.id)) return
+          // Give another focused window a short opportunity to suppress this
+          // alert. Best-effort when its UI thread is busy or suspended.
+          if (channel !== null) {
+            await new Promise(resolve => {
+              const timer = setTimeout(() => { waits.delete(timer); resolve() }, 100)
+              waits.set(timer, resolve)
+              try { channel.postMessage({ type: 'query', id: data.id, sessionId: data.sessionId }) }
+              catch { clearTimeout(timer); waits.delete(timer); resolve() }
+            })
+          }
+          if (disposed || !enabled() || seen.has(data.id)) return
+          // Share a bounded claim history while holding the Web Lock. A
+          // BroadcastChannel message alone may arrive after the next lock grant.
+          try {
+            const key = `${NOTIFY_KEY}.claims`
+            const claims = JSON.parse(localStorage.getItem(key) ?? '[]')
+            if (Array.isArray(claims) && claims.includes(data.id)) { remember(data.id); return }
+            localStorage.setItem(key, JSON.stringify([...(Array.isArray(claims) ? claims : []).slice(-63), data.id]))
+          } catch { /* Per-page dedup still works when storage is unavailable. */ }
+          remember(data.id)
+          channel?.postMessage(data.id)
+          if (archivedIdsNow().includes(data.sessionId)) return
+          if (viewing(data.sessionId)) return
+          try { show(data) } catch { setState({ notificationNotice: 'notify.failed' }) }
+        }
+        // Serialize claims between tabs where Web Locks is available. The
+        // bounded BroadcastChannel cache suppresses duplicates in other tabs.
+        if (typeof navigator?.locks?.request === 'function') {
+          await navigator.locks.request(`dsh-better-session:${data.id}`, deliver)
+        } else deliver()
+      }
+      const sync = () => {
+        source?.close()
+        source = null
+        if (!enabled()) {
+          closeActive()
+          setState({ notificationStatus: 'off' })
+          return
+        }
+        setState({ notificationStatus: 'connecting' })
+        try { source = new EventSource(hostUrl('better-session/completions')) }
+        catch { setState({ notificationStatus: 'disconnected' }); return }
+        source.onopen = () => { if (!disposed) setState({ notificationStatus: 'connected' }) }
+        source.onerror = () => { if (!disposed) setState({ notificationStatus: 'disconnected' }) }
+        source.onmessage = event => {
+          try { void handle(JSON.parse(event.data)).catch(() => {
+            if (!disposed) setState({ notificationNotice: 'notify.failed' })
+          }) } catch { /* Ignore malformed frames; never break the feed. */ }
+        }
+      }
+      const save = value => {
+        try { localStorage.setItem(NOTIFY_KEY, JSON.stringify(value)); return true }
+        catch { setState({ notificationNotice: 'notify.saveFailed' }); return false }
+      }
+      const authorize = async () => {
+        if (!supported()) { setState({ notificationNotice: 'notify.unsupported' }); return false }
+        try {
+          const permission = Notification.permission === 'default'
+            ? await Notification.requestPermission() : Notification.permission
+          if (disposed) return false
+          if (permission !== 'granted') { setState({ notificationNotice: 'notify.denied' }); return false }
+          return true
+        } catch { setState({ notificationNotice: 'notify.failed' }); return false }
+      }
+      const runtime = {
+        async toggle () {
+          if (snapshot.notificationBusy) return
+          setState({ notificationBusy: true, notificationNotice: null })
+          try {
+            const next = !snapshot.notificationsEnabled
+            if (next && !(await authorize())) return
+            if (disposed || !save(next)) return
+            setState({ notificationsEnabled: next })
+            sync()
+          } finally { if (!disposed) setState({ notificationBusy: false }) }
+        },
+        async test () {
+          if (snapshot.notificationBusy) return
+          setState({ notificationBusy: true, notificationNotice: null })
+          try {
+            if (!(await authorize())) return
+            show({}, true)
+            setState({ notificationNotice: 'notify.sent' })
+          } catch { if (!disposed) setState({ notificationNotice: 'notify.failed' }) }
+          finally { if (!disposed) setState({ notificationBusy: false }) }
+        },
+      }
+      notificationRuntime = runtime
+      const readPreference = () => {
+        let value = false
+        try { value = JSON.parse(localStorage.getItem(NOTIFY_KEY) ?? 'false') === true } catch { /* Safe default. */ }
+        setState({ notificationsEnabled: value })
+        sync()
+      }
+      const onStorage = event => { if (event.key === NOTIFY_KEY || event.key === null) readPreference() }
+      const onFocus = () => { if ((enabled() && source === null) || (!enabled() && source !== null)) sync() }
+      window.addEventListener('storage', onStorage)
+      window.addEventListener('focus', onFocus)
+      readPreference()
+      return () => {
+        disposed = true
+        source?.close()
+        closeActive()
+        channel?.close()
+        for (const [timer, resolve] of waits) { clearTimeout(timer); resolve() }
+        waits.clear()
+        window.removeEventListener('storage', onStorage)
+        window.removeEventListener('focus', onFocus)
+        if (notificationRuntime === runtime) notificationRuntime = null
+      }
+    }
+
+    function notificationSettings () {
+      const state = useStore(value => value)
+      const available = typeof Notification === 'function' && typeof EventSource === 'function'
+      const status = !available ? 'notify.unsupported'
+        : state.notificationsEnabled && Notification.permission !== 'granted' ? 'notify.denied'
+          : `notify.${state.notificationStatus}`
+      return h('section', { className: 'dsm-notifications', 'aria-labelledby': 'dsm-notification-heading' },
+        h('h3', { id: 'dsm-notification-heading', className: 'dsm-section-title' }, t('notify.heading')),
+        h('label', { className: 'dsm-notification-option' },
+          h('input', { type: 'checkbox', role: 'switch', checked: state.notificationsEnabled,
+            'aria-checked': state.notificationsEnabled, disabled: state.notificationBusy || !available,
+            onChange: () => { void notificationRuntime?.toggle() } }),
+          t('notify.enable')),
+        h('p', { className: 'dsm-page-intro' }, t('notify.help')),
+        h('div', { className: 'dsm-hint', role: 'status' }, t(status)),
+        h('button', { type: 'button', className: 'dsm-btn', disabled: state.notificationBusy || !available,
+          onClick: () => { void notificationRuntime?.test() } }, t('notify.test')),
+        state.notificationNotice === null ? null : h('div', { className: 'dsm-hint', role: 'status' }, t(state.notificationNotice)),
+      )
     }
 
     // ── Confirm dialog ─────────────────────────────────────────────────────
@@ -512,7 +872,9 @@ window.__ModuleLoader__.load({
       // The foot row is a narrow rail when the column is collapsed; a batch
       // bar there would be unreadable, so it appears only on wide content.
       if (props?.wide === false) return null
-      if (!batchMode) return null
+      if (!batchMode) return notice === null ? null : h('div', {
+        className: `dsm-notice dsm-notice--${notice.kind}`, role: 'status',
+      }, notice.text)
       const count = selected.length
       const allSelected = selectable.length > 0 && selectable.every(id => selected.includes(id))
       return h('div', { className: 'dsm-foot', role: 'group', 'aria-label': t('menu.batch') },
@@ -752,6 +1114,7 @@ window.__ModuleLoader__.load({
 
       return h('div', { className: 'dsm-page' },
         h('h2', { className: 'dsm-page-title' }, t('settings.title')),
+        h(notificationSettings),
         h('p', { className: 'dsm-page-intro' }, t('settings.intro')),
         h('div', { className: 'dsm-section-head' },
           h('div', { className: 'dsm-section-title' },
@@ -867,6 +1230,10 @@ window.__ModuleLoader__.load({
 
     // ── Styles ─────────────────────────────────────────────────────────────
     const CSS = `
+.dsm-notifications{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding-bottom:16px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dsm-notifications h3,.dsm-notifications p{margin:0}
+.dsm-notification-option{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.dsm-notification-option input{accent-color:var(--dsw-alias-brand-primary)}
 .dsm-lead{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:3px;background:transparent;color:#fff;cursor:pointer;flex:none}
 .dsm-lead:hover{border-color:var(--dsw-alias-brand-primary)}
 .dsm-lead--on{border-color:var(--dsw-alias-brand-primary);background:var(--dsw-alias-brand-primary)}
@@ -931,7 +1298,7 @@ window.__ModuleLoader__.load({
 
     // ── Client entry ───────────────────────────────────────────────────────
     return {
-      inject: ['slots', 'locale'],
+      inject: ['slots', 'locale', 'shortcuts', 'sessions', 'workspaces', 'uiWorkspace', 'layout'],
       apply (ctx) {
         rootCtx = ctx
         ctx.effect(() => {
@@ -948,6 +1315,8 @@ window.__ModuleLoader__.load({
         ctx.effect(() => ctx.locale.subscribe(() => setState({ revision: snapshot.revision + 1 })), 'dsh-better-session: locale')
 
         ctx.effect(mountStyles, 'dsh-better-session: styles')
+        ctx.effect(installCompletionNotifications, 'dsh-better-session: completion notifications')
+        ctx.effect(() => installSessionNavigation(ctx), 'dsh-better-session: session navigation')
 
         // Escape leaves batch mode. Registered on the document so it works
         // wherever focus happens to sit (row toggle, hover button, body).

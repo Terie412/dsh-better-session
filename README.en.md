@@ -28,10 +28,10 @@ Right-click any session → **Select multiple** to enter multi-select:
 
 ### 2. Delete a session
 
-Right-click any session → **Delete session**, confirm the dialog, and it is gone for good.
+Right-click any session → **Delete session**, then confirm to attempt permanent deletion. Loaded sessions require restarting Harness and retrying.
 
-- **Running sessions can be deleted too**: their work is stopped first, then the files are removed
-- Both the session record and its local cache are removed, so the space is genuinely reclaimed
+- **Loaded sessions are not deleted from disk**: their work is stopped and they stay archived. Restart DeepSeek Harness, then retry from **Settings → Session settings** without opening or restoring them first.
+- Failures are reported rather than claiming a loaded session was deleted. Successful deletion removes the session record and local cache.
 
 ### 3. Manage archived sessions
 
@@ -40,6 +40,25 @@ Right-click any session → **Delete session**, confirm the dialog, and it is go
 - Per session: **Restore** (back to the sidebar) or **Delete**
 - In batch: select some, then **Restore selected** or **Delete selected**
 - **Select all** at the top selects everything
+
+### 4. Switch sessions with the keyboard
+
+- **Alt + ←**: previous session; **Alt + →**: next session
+- Follows the sidebar's current order, including pins, manual ordering and workspace groups — not visit history
+- Skips archived rows, collapsed groups and rows not yet revealed by **Show more**; rendered rows outside the scroll viewport remain reachable
+- Stops at either end without wrapping; does nothing when the current session is absent from the list; works in text inputs, but not behind dialogs
+- Listed in the shortcut reference; customizable on Windows/macOS Desktop, fixed on Web/Linux and overrides browser back/forward
+
+### 5. Background completion notifications
+
+Enable under **Settings → Session settings → Completion notifications**, then allow system notifications. Disabled by default; the preference is device-local browser storage.
+
+- Ordinary sessions notify when a turn completes normally. Unfinished long-running goals suppress intermediate turns; a completed goal notifies after its final successful reply ends.
+- No alert while you are viewing the session in a focused window. Other sessions, unfocused windows and minimized windows can notify.
+- No alerts for cancellations, failures, subagents or archived sessions. Live events only: reloads and reconnects do not replay missed notifications.
+- Clicking tries to focus the window and open the session. **Test notification** checks permission without enabling completion alerts.
+- The app must remain running and connected. Window activation, placement, sound and Do not disturb are controlled by the desktop environment.
+- Web requires a secure context (HTTPS or localhost). Same-origin windows deduplicate and suppress alerts for a session viewed in another window on a best-effort basis. Busy/suspended windows or missing Web Locks/browser storage can prevent cross-window arbitration. Separate browsers/devices notify independently.
 
 ## Notes
 

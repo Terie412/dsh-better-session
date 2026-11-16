@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "dsh-better-session",
-    "description": "Batch-archive or permanently delete sessions, and manage archived sessions in Settings.",
+    "description": "Batch archive/delete, keyboard navigation, archived-session settings and background completion notifications.",
     "detail": "README.en.md"
   }
 }

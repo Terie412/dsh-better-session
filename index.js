@@ -15,11 +15,13 @@
  *
  * Everything is exposed over one fenced POST route so the Client half never
  * needs filesystem access. Deletion stops the Session's running work and
- * closes its admission gate before removing the log, so nothing can start a
- * new step on a log that is already gone.
+ * closes its admission gate before removing the log. A live Session cannot be
+ * destroyed through the current public Host API, so it stays archived and the
+ * request fails safely until the application restarts.
  */
-import { readdir, rm, stat } from 'node:fs/promises'
+import { lstat, readdir, realpath, rm, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import { installCompletionFeed } from './completion.js'
 import { basename, isAbsolute, join, relative, sep } from 'node:path'
 
 /** Route the Client half posts to. */
@@ -73,8 +75,11 @@ async function scanSessionDirs (root, id) {
     if (!entry.isDirectory()) continue
     const candidate = join(root, entry.name, id)
     try {
-      const info = await stat(candidate)
-      if (info.isDirectory() && basename(candidate) === id && isInside(root, candidate)) found.push(candidate)
+      const info = await lstat(candidate)
+      const actualRoot = await realpath(root)
+      const actualCandidate = await realpath(candidate)
+      if (!info.isSymbolicLink() && info.isDirectory() && basename(candidate) === id &&
+          isInside(root, candidate) && isInside(actualRoot, actualCandidate)) found.push(candidate)
     } catch {
       // Not every workspace directory owns this Session.
     }
@@ -206,25 +211,16 @@ async function describeSessions (ctx, home, ids) {
  */
 async function forgetSession (ctx, id) {
   const registry = ctx.get('workspaceRegistry')
-  if (registry === undefined) return
-  try {
-    await registry.unarchiveSession(id)
-  } catch {
-    // Already absent.
-  }
-  try {
-    await registry.unpinSession(id)
-  } catch {
-    // Already absent.
-  }
+  await registry.unpinSession(id)
   for (const workspace of registry.list()) {
-    if (!workspace.sessionIds.includes(id)) continue
-    try {
-      await workspace.detachSession(id)
-    } catch {
-      // Accounting is best-effort; the log removal already hides the Session.
-    }
+    if (workspace.sessionIds.includes(id)) await workspace.detachSession(id)
   }
+  // Restore visibility only after every other cleanup succeeded. In particular,
+  // never reopen the archive gate while a live Session can republish its row.
+  if (ctx.get('sessions').get(id) !== undefined) {
+    throw new Error('会话仍驻留内存，已保留归档；请重启 DeepSeek Harness 后在“会话设置”中重试删除。 / Session is still loaded; restart Harness and retry from Session settings.')
+  }
+  await registry.unarchiveSession(id)
 }
 
 /**
@@ -251,20 +247,13 @@ function announceRemoval (ctx, id) {
  * `workspace/session-stop`, whose providers cancel the running turn, its
  * subagent descendants, owned jobs, and active schedules through the same
  * cancel paths the user's stop actions use. It neither tears the Agent down
- * nor closes its log handle, so deletion must not wait for either. Best-effort:
- * a registry that is absent or refuses never blocks the deletion.
+ * nor closes its log handle. Failure must abort deletion, and a Session still
+ * in the live store must not have its files removed.
  * @param ctx - Host plugin context.
  * @param id - the Session id.
  */
 async function stopSession (ctx, id) {
-  const registry = ctx.get('workspaceRegistry')
-  if (registry === undefined) return
-  try {
-    await registry.archiveSession(id, { stopActivity: true })
-  } catch {
-    // No registry, unknown Session, or already archived; the log removal
-    // stands on its own.
-  }
+  await ctx.get('workspaceRegistry').archiveSession(id, { stopActivity: true })
 }
 
 /**
@@ -272,10 +261,9 @@ async function stopSession (ctx, id) {
  *
  * Running work is stopped and the admission gate is closed, then the log and
  * projection cache are removed from disk, and finally every durable
- * reference to the Session is dropped. Deletion never waits for the Agent's
- * lifecycle to wind down: the archive gate already blocks new steps, and the
- * platform does not keep the log file locked, so there is nothing left to
- * write to.
+ * reference to the Session is dropped. Loaded Sessions are refused: stopping
+ * activity is not disposal, and the public API cannot dispose another owner's
+ * Agent. An exclusive persistence writer also excludes in-flight resumes.
  * @param ctx - Host plugin context.
  * @param home - DSH home directory.
  * @param id - the Session id.
@@ -286,35 +274,87 @@ async function deleteSession (ctx, home, id) {
     return { sessionId: String(id), deleted: false, code: 'bad-id', message: 'not a Session id' }
   }
 
-  await stopSession(ctx, id)
+  let guard
+  let phase = 'stop-failed'
+  try {
+    await stopSession(ctx, id)
+    const loaded = () => ctx.get('sessions').get(id) !== undefined
+    const refuseLoaded = () => ({
+      sessionId: id,
+      deleted: false,
+      code: 'session-loaded',
+      message: '会话仍驻留内存，已保留归档且未删除文件；请重启 DeepSeek Harness 后在“会话设置”中重试删除。 / Session is still loaded; restart Harness and retry from Session settings.',
+    })
+    if (loaded()) return refuseLoaded()
 
-  const located = await locateSession(home, id)
-  const targets = [...located.dirs, located.cacheFile]
-  for (const target of targets) {
+    // Archive blocks model steps, not resume itself. Hold the backend's
+    // exclusive writer throughout deletion so a concurrent resume cannot enter
+    // the live store between our check and filesystem removal.
+    phase = 'session-busy'
     try {
-      await rm(target, { recursive: true, force: true })
+      guard = await ctx.get('sessionPersistence').open(id, 'write')
     } catch (error) {
-      return {
-        sessionId: id,
-        deleted: false,
-        code: 'delete-failed',
-        message: `${basename(target)}: ${error instanceof Error ? error.message : String(error)}`,
+      // A previous attempt may have removed the log but failed to clear its
+      // registry references. A genuine backend NotFound (not a busy/corrupt
+      // log) permits reference-only cleanup; never remove files without a lock.
+      if (error?.name !== 'SessionPersistenceNotFoundError' ||
+          await ctx.get('sessionPersistence').stat(id) !== undefined) throw error
+      if (loaded()) return refuseLoaded()
+      phase = 'delete-failed'
+      await forgetSession(ctx, id)
+      announceRemoval(ctx, id)
+      return { sessionId: id, deleted: true, bytes: null, removed: 0 }
+    }
+    if (loaded()) return refuseLoaded()
+
+    phase = 'delete-failed'
+    const located = await locateSession(home, id)
+    if (located.dirs.length === 0) throw new Error('Session log directory not found; refusing to clear archive protection')
+    const targets = [...located.dirs, located.cacheFile]
+    for (const target of targets) {
+      // locateSession validates exact ids and containment under the session
+      // root; the other target is the exact id's projection-cache checkpoint.
+      if (process.platform !== 'win32' && located.dirs.includes(target)) {
+        // POSIX writers lock this inode. Unlinking it while holding the lock
+        // would let another process create a new inode and bypass exclusion.
+        for (const name of await readdir(target)) {
+          if (name !== 'session.lock') await rm(join(target, name), { recursive: true, force: true })
+        }
+      } else {
+        await rm(target, { recursive: true, force: true })
       }
     }
-  }
-
-  await forgetSession(ctx, id)
-  announceRemoval(ctx, id)
-  return {
-    sessionId: id,
-    deleted: true,
-    bytes: located.bytes,
-    removed: targets.length,
+    await forgetSession(ctx, id)
+    phase = 'close-failed'
+    const ownedGuard = guard
+    guard = undefined
+    await ownedGuard.close()
+    announceRemoval(ctx, id)
+    return { sessionId: id, deleted: true, bytes: located.bytes, removed: targets.length }
+  } catch (error) {
+    return {
+      sessionId: id,
+      deleted: false,
+      code: phase,
+      message: phase === 'session-busy'
+        ? '会话存储正被占用或无法安全打开，未删除文件；请重启后重试。 / Session storage is busy or unavailable; restart Harness and retry.'
+        : error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    // Do not publish success until the writer is released. close() drains the
+    // handle; unlike flush(), it does not materialize an empty deleted log.
+    if (guard !== undefined) {
+      try {
+        await guard.close()
+      } catch (error) {
+        return { sessionId: id, deleted: false, code: 'close-failed', message: error instanceof Error ? error.message : String(error) }
+      }
+    }
   }
 }
 
 /** Hard dependencies: the route carrier, and the Session registry reads. */
-export const inject = ['webServer']
+export const inject = ['webServer', 'connection', 'sessions', 'workspaceRegistry', 'sessionPersistence']
 
 /**
  * Host half: mount the fenced API route.
@@ -324,13 +364,16 @@ export function apply (ctx) {
   const home = resolveHome()
   const fence = (req) => {
     const connection = ctx.get('connection')
-    if (connection === undefined) return true
+    if (connection === undefined) return false
     try {
-      return connection.requestRejection(req) === undefined
+      const admission = connection.admit(req)
+      return !('rejection' in admission) && admission.peer.principal.kind === 'owner'
     } catch {
       return false
     }
   }
+
+  installCompletionFeed(ctx, fence)
 
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
