@@ -179,9 +179,48 @@ window.__ModuleLoader__.load({
     }
     const listeners = new Set()
 
+    /** One deadline per transient action result; unrelated updates never extend it. */
+    function createNoticeExpiry (expire, schedule = setTimeout, cancel = clearTimeout) {
+      let timer = null
+      let revision = 0
+      const clear = () => {
+        revision++
+        if (timer !== null) cancel(timer)
+        timer = null
+      }
+      return {
+        update (notice) {
+          clear()
+          if (notice === null) return
+          const current = revision
+          timer = schedule(() => {
+            if (current !== revision) return
+            timer = null
+            expire()
+          }, notice.kind === 'error' ? 8000 : 4000)
+        },
+        clear,
+      }
+    }
+    let noticesActive = true
+    const noticeExpiry = createNoticeExpiry(() => setState({ notice: null }))
+    const notificationNoticeExpiry = createNoticeExpiry(() => setState({ notificationNotice: null }))
+
     function setState (patch) {
+      if (!noticesActive) patch = { ...patch, notice: null, notificationNotice: null }
       snapshot = { ...snapshot, ...patch }
+      if (Object.hasOwn(patch, 'notice')) noticeExpiry.update(patch.notice)
+      if (Object.hasOwn(patch, 'notificationNotice')) notificationNoticeExpiry.update(
+        patch.notificationNotice === null ? null : { kind: patch.notificationNotice === 'notify.sent' ? 'ok' : 'error' },
+      )
       for (const listener of [...listeners]) listener()
+    }
+
+    function clearTransientNotices () {
+      noticesActive = false
+      noticeExpiry.clear()
+      notificationNoticeExpiry.clear()
+      snapshot = { ...snapshot, notice: null, notificationNotice: null }
     }
 
     function subscribe (listener) {
@@ -1314,6 +1353,10 @@ window.__ModuleLoader__.load({
         // Re-render mounted surfaces when the active locale changes.
         ctx.effect(() => ctx.locale.subscribe(() => setState({ revision: snapshot.revision + 1 })), 'dsh-better-session: locale')
 
+        ctx.effect(() => {
+          noticesActive = true
+          return clearTransientNotices
+        }, 'dsh-better-session: transient notices')
         ctx.effect(mountStyles, 'dsh-better-session: styles')
         ctx.effect(installCompletionNotifications, 'dsh-better-session: completion notifications')
         ctx.effect(() => installSessionNavigation(ctx), 'dsh-better-session: session navigation')
