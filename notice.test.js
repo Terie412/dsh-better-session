@@ -102,6 +102,14 @@ test('temporary feedback has one shell overlay owner and no inline renderers', (
   assert.ok(!source.includes("role: 'status' }, t(state.notificationNotice)"))
 })
 
+test('tip shadow uses a subtle neutral mask instead of glowing text color', () => {
+  const rule = source.match(/\.dsm-tip\{([^}]+)\}/)[1]
+  const shadow = rule.match(/box-shadow:([^;]+)/)[1]
+  assert.match(shadow, /^0 2px 8px /)
+  assert.ok(shadow.includes('var(--dsw-alias-bg-mask-2) 40%'))
+  assert.ok(!shadow.includes('label-primary'))
+})
+
 test('unload clears feedback, cancels timers and invalidates pending callbacks', () => {
   const h = harness()
   h.api.setState({ notice: { kind: 'error' }, notificationNotice: 'notify.failed' })
