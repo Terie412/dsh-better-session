@@ -1,6 +1,6 @@
 {
   "name": "dsh-better-session",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Session management for DeepSeek Harness: batch archive/delete, archived-session settings, keyboard navigation and background completion notifications.",
   "type": "module",
   "icon": "./icon.svg",

@@ -64,6 +64,7 @@ dsh plugin --profile web add git@github.com:Terie412/dsh-better-session.git
 
 - 归档不占额外空间、可恢复，想留后路就归档；确实不要了再删除
 - 删除前一定会弹窗确认
+- 操作结果在页面顶部居中显示悬浮提示，不占侧栏或设置页空间；成功 4 秒、错误 8 秒后消失，也可手动关闭；批量相同错误合并显示
 
 ## 许可证
 

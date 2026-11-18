@@ -78,6 +78,30 @@ test('notification feedback expires independently without clearing persistent co
   assert.equal(h.api.read().notice, null)
 })
 
+test('batch failure summary uses concise localized codes and deduplicates reasons', () => {
+  const start = source.indexOf('    function deletionFailureText')
+  const end = source.indexOf('    function toggleSelected', start)
+  const context = vm.createContext({ t: (key, values) => values ? `${key}:${values.count}:${values.reason}` : key })
+  vm.runInContext(`${source.slice(start, end)}\nglobalThis.summarize = deletionFailureText`, context)
+  const repeated = Array.from({ length: 5 }, () => ({ code: 'session-loaded', message: 'long bilingual diagnostic' }))
+  assert.equal(context.summarize(repeated), 'result.failed:5:result.loaded')
+  assert.equal(context.summarize([...repeated, { code: 'session-busy' }]), 'result.failed:6:result.loaded result.storageBusy')
+  assert.equal(context.summarize([{ message: 'raw backend error' }]), 'result.failed:1:result.deleteFailed')
+})
+
+test('temporary feedback has one shell overlay owner and no inline renderers', () => {
+  assert.ok(source.includes("id: 'better-session-tips'"))
+  assert.ok(source.includes('}, transientTips)'))
+  assert.ok(source.includes('createPortal(overlay, document.body)'))
+  assert.ok(source.includes('.dsm-tips-layer{position:fixed;top:'))
+  assert.ok(source.includes('pointer-events:none'))
+  assert.ok(source.includes("'aria-live': 'polite'"))
+  assert.ok(source.includes("'aria-label': t('tips.dismiss')"))
+  assert.ok(!source.includes('dsm-notice'))
+  assert.ok(!source.includes('function useNotice'))
+  assert.ok(!source.includes("role: 'status' }, t(state.notificationNotice)"))
+})
+
 test('unload clears feedback, cancels timers and invalidates pending callbacks', () => {
   const h = harness()
   h.api.setState({ notice: { kind: 'error' }, notificationNotice: 'notify.failed' })

@@ -65,7 +65,11 @@ window.__ModuleLoader__.load({
       'confirm.cancel': '取消',
       'confirm.busy': '正在删除…',
       'result.deleted': '已删除 {count} 个会话',
-      'result.failed': '有 {count} 个会话删除失败：{reason}',
+      'result.failed': '{count} 个会话未能删除：{reason}',
+      'result.loaded': '会话仍在内存中，已保留归档。重启 DSH 后到“会话设置”重试。',
+      'result.storageBusy': '会话存储被占用，未删除文件，请稍后或重启后重试。',
+      'result.deleteFailed': '删除未完成，请稍后重试。',
+      'tips.dismiss': '关闭提示',
       'error.offline': '无法连接本地会话管理服务',
       'notify.heading': '完成通知',
       'notify.enable': '后台会话完成时发送系统通知',
@@ -124,6 +128,10 @@ window.__ModuleLoader__.load({
       'confirm.busy': 'Deleting…',
       'result.deleted': 'Deleted {count} sessions',
       'result.failed': '{count} sessions could not be deleted: {reason}',
+      'result.loaded': 'Sessions are still loaded and remain archived. Restart DSH, then retry in Session settings.',
+      'result.storageBusy': 'Session storage is busy. Files were not deleted; retry later or after restarting.',
+      'result.deleteFailed': 'Deletion did not finish. Please retry later.',
+      'tips.dismiss': 'Dismiss notification',
       'error.offline': 'Cannot reach the local session management service',
       'notify.heading': 'Completion notifications',
       'notify.enable': 'Notify when a background session completes',
@@ -239,16 +247,38 @@ window.__ModuleLoader__.load({
     const selectPending = (s) => s.pending
     const selectBusy = (s) => s.busy
 
-    /**
-     * The notice one surface may show; the other surface's news stays hidden.
-     * @param scope - 'sidebar' or 'settings'.
-     * @returns the matching notice, or null.
-     */
-    function useNotice (scope) {
-      const read = useCallback(() => (
-        snapshot.notice !== null && snapshot.notice.scope === scope ? snapshot.notice : null
-      ), [scope])
-      return useSyncExternalStore(subscribe, read, read)
+    /** Global overlay, never part of sidebar/settings document flow. */
+    function transientTips () {
+      const notice = useStore(value => value.notice)
+      const notificationNotice = useStore(value => value.notificationNotice)
+      const revision = useStore(value => value.revision)
+      void revision // Locale-only changes also refresh close labels and copy.
+      const tips = []
+      if (notice !== null) tips.push({ key: 'action', ...notice, dismiss: () => setState({ notice: null }) })
+      if (notificationNotice !== null) tips.push({ key: 'notification',
+        kind: notificationNotice === 'notify.sent' ? 'ok' : 'error', text: t(notificationNotice),
+        dismiss: () => setState({ notificationNotice: null }) })
+      const overlay = h('div', { className: 'dsm-tips-layer', 'aria-live': 'polite', 'aria-atomic': 'true' },
+        tips.map(tip => h('div', { key: tip.key, className: `dsm-tip dsm-tip--${tip.kind}` },
+          h('span', { className: 'dsm-tip-icon', 'aria-hidden': true }, tip.kind === 'ok' ? '✓' : '!'),
+          h('span', { className: 'dsm-tip-text' }, tip.text),
+          h('button', { type: 'button', className: 'dsm-tip-close', 'aria-label': t('tips.dismiss'),
+            onClick: tip.dismiss }, '×'),
+        )),
+      )
+      // Settings is portalled above shell.overlay. A portal keeps these tips
+      // visible above it without changing focus or intercepting the whole page.
+      return createPortal !== null ? createPortal(overlay, document.body) : overlay
+    }
+
+    /** Map stable Host failure codes to one concise, localized batch summary. */
+    function deletionFailureText (failed) {
+      const reasons = [...new Set(failed.map(row => {
+        if (row.code === 'session-loaded') return t('result.loaded')
+        if (row.code === 'session-busy') return t('result.storageBusy')
+        return t('result.deleteFailed')
+      }))]
+      return t('result.failed', { count: failed.length, reason: reasons.join(' ') })
     }
 
     function toggleSelected (sessionId) {
@@ -703,7 +733,6 @@ window.__ModuleLoader__.load({
         h('div', { className: 'dsm-hint', role: 'status' }, t(status)),
         h('button', { type: 'button', className: 'dsm-btn', disabled: state.notificationBusy || !available,
           onClick: () => { void notificationRuntime?.test() } }, t('notify.test')),
-        state.notificationNotice === null ? null : h('div', { className: 'dsm-hint', role: 'status' }, t(state.notificationNotice)),
       )
     }
 
@@ -743,10 +772,7 @@ window.__ModuleLoader__.load({
             scope: scope ?? 'sidebar',
             kind: failed.length === 0 ? 'ok' : 'error',
             text: failed.length > 0
-              ? t('result.failed', {
-                  count: failed.length,
-                  reason: failed.map((row) => row.message ?? row.code).join('; '),
-                })
+              ? deletionFailureText(failed)
               : t('result.deleted', { count: results.length }),
           },
         })
@@ -905,15 +931,12 @@ window.__ModuleLoader__.load({
       const batchMode = useStore(selectBatchMode)
       const selected = useStore(selectSelected)
       const busy = useStore(selectBusy)
-      const notice = useNotice('sidebar')
       const archivedIds = useArchivedIds(props)
       const selectable = useSelectableIds(props, archivedIds)
       // The foot row is a narrow rail when the column is collapsed; a batch
       // bar there would be unreadable, so it appears only on wide content.
       if (props?.wide === false) return null
-      if (!batchMode) return notice === null ? null : h('div', {
-        className: `dsm-notice dsm-notice--${notice.kind}`, role: 'status',
-      }, notice.text)
+      if (!batchMode) return null
       const count = selected.length
       const allSelected = selectable.length > 0 && selectable.every(id => selected.includes(id))
       return h('div', { className: 'dsm-foot', role: 'group', 'aria-label': t('menu.batch') },
@@ -957,9 +980,6 @@ window.__ModuleLoader__.load({
             },
           }, t('batch.delete')),
         ),
-        notice === null ? null : h('div', {
-          className: `dsm-notice dsm-notice--${notice.kind}`, role: 'status',
-        }, notice.text),
       )
     }
 
@@ -1097,7 +1117,6 @@ window.__ModuleLoader__.load({
       const { archivedIds } = props
       const selected = useStore(selectSettingsSelected)
       const busy = useStore(selectBusy)
-      const notice = useNotice('settings')
       const [rows, setRows] = useState(EMPTY)
       const [loading, setLoading] = useState(false)
 
@@ -1182,9 +1201,6 @@ window.__ModuleLoader__.load({
             }, t('settings.batchDelete')),
           ),
         ),
-        notice === null ? null : h('div', {
-          className: `dsm-notice dsm-notice--${notice.kind}`, role: 'status',
-        }, notice.text),
         ids.length === 0
           ? h('div', { className: 'dsm-empty' }, t('settings.empty'))
           : h('div', { className: 'dsm-list' }, rows.map((row) => {
@@ -1296,9 +1312,17 @@ window.__ModuleLoader__.load({
 .dsm-btn--danger{background:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);color:#fff}
 .dsm-btn--danger:hover:not(:disabled){background:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary);filter:brightness(1.08)}
 .dsm-btn--danger-text{color:var(--dsw-alias-state-error-primary)}
-.dsm-notice{font-size:12px;line-height:16px;padding:6px 8px;border-radius:var(--dsw-radius-sm,6px);word-break:break-word}
-.dsm-notice--ok{color:var(--dsw-alias-state-success-primary)}
-.dsm-notice--error{color:var(--dsw-alias-state-error-primary)}
+.dsm-tips-layer{position:fixed;top:max(24px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:2147483001;width:max-content;max-width:calc(100vw - 32px);display:flex;flex-direction:column;gap:10px;align-items:center;pointer-events:none}
+.dsm-tip{display:flex;align-items:flex-start;gap:10px;max-width:min(560px,calc(100vw - 32px));box-sizing:border-box;padding:12px 14px;border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:13px;line-height:20px;box-shadow:0 6px 24px color-mix(in srgb,var(--dsw-alias-label-primary) 16%,transparent);pointer-events:auto;animation:dsm-tip-in .16s ease-out}
+.dsm-tip-icon{display:flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;font-weight:700}
+.dsm-tip--ok .dsm-tip-icon{color:var(--dsw-alias-state-success-primary)}
+.dsm-tip--error .dsm-tip-icon{color:var(--dsw-alias-state-error-primary)}
+.dsm-tip-text{min-width:0;overflow-wrap:anywhere;white-space:pre-line;max-height:160px;overflow:auto}
+.dsm-tip-close{flex:none;display:flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-4px -4px -4px 0;border:0;background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:18px;line-height:20px;padding:0;cursor:pointer}
+.dsm-tip-close:hover{color:var(--dsw-alias-label-primary)}
+.dsm-tip-close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
+@keyframes dsm-tip-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.dsm-tip{animation:none}}
 .dsm-scrim{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);padding:24px}
 .dsm-modal{width:min(420px,100%);display:flex;flex-direction:column;gap:12px;padding:18px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg,12px);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);box-shadow:0 18px 48px rgba(0,0,0,.35)}
 .dsm-modal-title{font-size:15px;font-weight:600;line-height:22px}
@@ -1394,6 +1418,13 @@ window.__ModuleLoader__.load({
           order: 900,
           locale: NS,
         }, confirmOverlay))
+
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'better-session-tips',
+          order: 910,
+          locale: NS,
+        }, transientTips))
 
         // The icon registration id must equal the section id, or the shell
         // never renders it and keeps its default gear.

@@ -64,6 +64,7 @@ Enable under **Settings → Session settings → Completion notifications**, the
 
 - Archiving costs no extra space and is reversible — use it to keep a way back. Delete only when you are sure
 - Every deletion asks for confirmation first
+- Action feedback appears in floating top-center tips, not inside the sidebar or Settings. Success expires after 4 seconds, errors after 8 seconds; tips can be dismissed manually. Repeated batch errors are merged.
 
 ## License
 
